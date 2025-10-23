@@ -1,0 +1,240 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  phone        String?   @unique
+  passwordHash String
+  fullName     String
+  status       String    @default("active")
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Tokens
+  refreshTokens RefreshToken[]
+
+  // === Back-relations (để fix lỗi) ===
+  // Workspace owner
+  ownedWorkspaces         Workspace[]       @relation("WorkspaceOwner")
+  // Workspace membership
+  workspaceMemberships    WorkspaceMember[] @relation("WorkspaceMembership")
+  // Workspace invitations sent
+  invitedWorkspaceMembers WorkspaceMember[] @relation("WorkspaceInviter")
+
+  // Board creator
+  boardsCreated    Board[]       @relation("BoardCreator")
+  // Board membership
+  boardMemberships BoardMember[] @relation("BoardMembership")
+
+  // Card reporter/creator/updater
+  reportedCards Card[] @relation("CardReporter")
+  createdCards  Card[] @relation("CardCreator")
+  updatedCards  Card[] @relation("CardUpdater")
+
+  // Card membership
+  cardMemberships CardMember[] @relation("CardMembership")
+
+  // Comments authored
+  commentsAuthored Comment[] @relation("CommentAuthor")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Workspace {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  visibility  String            @default("private") // private|public
+  ownerId     String
+  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members     WorkspaceMember[]
+  boards      Board[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("member") // owner|admin|member|guest
+  invitedById String?
+  invitedAt   DateTime?
+  joinedAt    DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Đặt tên quan hệ để có back-relations rõ ràng bên User
+  user      User  @relation("WorkspaceMembership", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy User? @relation("WorkspaceInviter", fields: [invitedById], references: [id])
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+}
+
+model Board {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  keySlug     String?
+  mode        String    @default("private") // private|workspace|public
+  isPinned    Boolean   @default(false)
+  archivedAt  DateTime?
+  createdById String
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User          @relation("BoardCreator", fields: [createdById], references: [id])
+  members   BoardMember[]
+  lists     List[]
+  labels    Label[]
+  cards     Card[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model BoardMember {
+  id        String    @id @default(cuid())
+  boardId   String
+  userId    String
+  role      String    @default("contributor") // admin|maintainer|contributor|viewer
+  invitedBy String?
+  invitedAt DateTime?
+  joinedAt  DateTime?
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user  User  @relation("BoardMembership", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, userId])
+  @@index([boardId])
+}
+
+model List {
+  id       String  @id @default(cuid())
+  boardId  String
+  name     String
+  orderIdx Int
+  isDone   Boolean @default(false)
+
+  board Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards Card[]
+
+  @@unique([boardId, name])
+  @@unique([boardId, orderIdx])
+  @@index([boardId])
+}
+
+model Card {
+  id          String    @id @default(cuid())
+  boardId     String
+  listId      String
+  keySeq      Int
+  title       String
+  description String?
+  dueDate     DateTime?
+  startDate   DateTime?
+  priority    String    @default("medium") // low|medium|high|urgent
+  reporterId  String?
+  createdById String
+  updatedById String?
+  orderIdx    Int
+  archivedAt  DateTime?
+  custom      Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  list  List  @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  // Đặt tên quan hệ rõ ràng tới User
+  reporter  User? @relation("CardReporter", fields: [reporterId], references: [id])
+  createdBy User  @relation("CardCreator", fields: [createdById], references: [id])
+  updatedBy User? @relation("CardUpdater", fields: [updatedById], references: [id])
+
+  members  CardMember[]
+  labels   CardLabel[]
+  comments Comment[]
+
+  @@unique([boardId, keySeq])
+  @@index([boardId, listId, orderIdx])
+}
+
+model CardMember {
+  cardId String
+  userId String
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User @relation("CardMembership", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([cardId, userId])
+}
+
+model Label {
+  id       String @id @default(cuid())
+  boardId  String
+  name     String
+  colorHex String @default("#888888")
+
+  board Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards CardLabel[]
+
+  @@unique([boardId, name])
+  @@index([boardId])
+}
+
+model CardLabel {
+  cardId  String
+  labelId String
+
+  card  Card  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([cardId, labelId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  cardId    String
+  authorId  String
+  parentId  String?
+  bodyMd    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  card   Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  author User @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Self relation: parent <-> children
+  parent   Comment?  @relation("CommentParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children Comment[] @relation("CommentParent")
+}
