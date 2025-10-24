@@ -36,6 +36,21 @@ app.use(passport.initialize());
 // ⚠️ SỬA: Thay đổi từ "/api" thành "/" để route /auth/google có thể hoạt động
 app.use("/", routes);
 
+// --- TIỆN ÍCH: ENDPOINT ĐỂ XÓA CACHE ---
+// Đây là một ví dụ về cách bạn có thể thêm một endpoint để xóa cache.
+// Bạn cần import instance của keyv mà bạn đang sử dụng trong ứng dụng.
+// Giả sử bạn có một file quản lý cache, ví dụ: './config/cache.config.js'
+/*
+const keyv = require('./config/cache.config'); // Giả sử bạn export keyv instance từ file này
+
+app.post("/api/cache/clear", async (req, res) => {
+    // ⚠️ BẢO MẬT: Endpoint này nên được bảo vệ, ví dụ chỉ cho phép admin.
+    // Ở đây chúng ta chỉ minh họa chức năng.
+    await keyv.clear();
+    console.log("Cache đã được xóa thành công!");
+    res.status(200).send({ message: "Cache cleared successfully." });
+});
+*/
 
 // KHỞI ĐỘNG SERVER
 const PORT = process.env.PORT || 4000;

@@ -6,6 +6,10 @@ const bcrypt = require('bcryptjs'); // *** SỬA LỖI: Dùng bcryptjs cho phù 
 // Import normalizeEmail từ auth.controller.js
 const { normalizeEmail } = require('../controllers/auth.controller'); 
 
+// --- DEBUG: In ra các biến môi trường để kiểm tra ---
+console.log("GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID);
+console.log("GOOGLE_CLIENT_SECRET:", process.env.GOOGLE_CLIENT_SECRET);
+// ----------------------------------------------------
 
 // Thiết lập Google Strategy
 passport.use(new GoogleStrategy({
