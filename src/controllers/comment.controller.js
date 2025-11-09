@@ -2,13 +2,28 @@
 const { prisma } = require('../shared/prisma');
 const { createCommentSchema, updateCommentSchema } = require('../validators/comment.validators');
 
+async function checkWorkspaceAccess(boardId, userId) {
+  const board = await prisma.board.findUnique({ 
+    where: { id: boardId },
+    select: { workspaceId: true }
+  });
+  if (!board) return { board: null, workspaceMember: null };
+
+  const workspaceMember = await prisma.workspaceMember.findFirst({ 
+    where: { workspaceId: board.workspaceId, userId } 
+  });
+  
+  return { board, workspaceMember };
+}
+
 
 async function listComments(req, res) {
     const { cardId } = req.params;
     const card = await prisma.card.findUnique({ where: { id: cardId } });
     if (!card) return res.status(404).json({ error: 'Card not found' });
-    const bm = await prisma.boardMember.findFirst({ where: { boardId: card.boardId, userId: req.user.id } });
-    if (!bm) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(card.boardId, req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
 
     const comments = await prisma.comment.findMany({ where: { cardId }, orderBy: { createdAt: 'asc' } });
@@ -24,8 +39,9 @@ async function addComment(req, res) {
 
     const card = await prisma.card.findUnique({ where: { id: cardId } });
     if (!card) return res.status(404).json({ error: 'Card not found' });
-    const bm = await prisma.boardMember.findFirst({ where: { boardId: card.boardId, userId: req.user.id } });
-    if (!bm) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(card.boardId, req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
 
     const { bodyMd, parentId } = { ...parsed.data, ...req.body };

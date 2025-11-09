@@ -2,6 +2,20 @@
 const { prisma } = require('../shared/prisma');
 const { createListSchema, reorderListsSchema } = require('../validators/list.validators');
 
+async function checkWorkspaceAccess(boardId, userId) {
+  const board = await prisma.board.findUnique({ 
+    where: { id: boardId },
+    select: { workspaceId: true }
+  });
+  if (!board) return { board: null, workspaceMember: null };
+
+  const workspaceMember = await prisma.workspaceMember.findFirst({ 
+    where: { workspaceId: board.workspaceId, userId } 
+  });
+  
+  return { board, workspaceMember };
+}
+
 
 async function createList(req, res) {
     const parsed = createListSchema.safeParse(req.body);
@@ -9,8 +23,9 @@ async function createList(req, res) {
     const { boardId, name } = parsed.data;
 
 
-    const member = await prisma.boardMember.findFirst({ where: { boardId, userId: req.user.id } });
-    if (!member) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(boardId, req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
 
     const max = await prisma.list.aggregate({ where: { boardId }, _max: { orderIdx: true } });
@@ -53,8 +68,9 @@ async function reorderLists(req, res) {
     const { boardId, orders } = parsed.data;
 
 
-    const member = await prisma.boardMember.findFirst({ where: { boardId, userId: req.user.id } });
-    if (!member) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(boardId, req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
 
     await prisma.$transaction(

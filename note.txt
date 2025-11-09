@@ -1,0 +1,13 @@
+
+
+thêm lây member
+admin và owner đc phép xóa card
+fix tạo card (chỉ admin và owner mới là người tạo)
+hiển thị đầy đủ thông tin card , fix issue
+
+
+
+
+chưa
+
+ràng buộc di chuyển card

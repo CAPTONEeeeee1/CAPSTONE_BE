@@ -12,4 +12,14 @@ const inviteMemberSchema = z.object({
     role: z.enum(['admin', 'member', 'guest']).optional()
 });
 
-module.exports = { createWorkspaceSchema, inviteMemberSchema };
+const updateWorkspaceSchema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    visibility: z.enum(['private', 'public']).optional()
+});
+
+const updateMemberRoleSchema = z.object({
+    role: z.enum(['admin', 'member', 'guest'])
+});
+
+module.exports = { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema };

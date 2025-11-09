@@ -1,5 +1,11 @@
 const { z } = require('zod');
 
+const attachmentSchema = z.object({
+    fileName: z.string().min(1),
+    fileSize: z.number().int().positive(),
+    mimeType: z.string().min(1),
+    fileUrl: z.string().url()
+});
 
 const createCardSchema = z.object({
     boardId: z.string().min(1),
@@ -11,9 +17,9 @@ const createCardSchema = z.object({
     startDate: z.string().datetime().optional(),
     assigneeIds: z.array(z.string().min(1)).optional(),
     labelIds: z.array(z.string().min(1)).optional(),
+    attachments: z.array(attachmentSchema).optional(),
     custom: z.any().optional()
 });
-
 
 const updateCardSchema = z.object({
     title: z.string().min(1).optional(),
@@ -23,14 +29,17 @@ const updateCardSchema = z.object({
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     listId: z.string().optional(),
     orderIdx: z.number().int().optional(),
+    attachments: z.array(attachmentSchema).optional(),
     custom: z.any().optional()
 });
-
 
 const moveCardSchema = z.object({
     toListId: z.string().min(1),
     toIndex: z.number().int().nonnegative()
 });
 
+const assignMemberSchema = z.object({
+    userId: z.string().min(1)
+});
 
-module.exports = { createCardSchema, updateCardSchema, moveCardSchema };
+module.exports = { createCardSchema, updateCardSchema, moveCardSchema, assignMemberSchema, attachmentSchema };

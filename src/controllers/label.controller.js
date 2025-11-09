@@ -1,6 +1,20 @@
 const { prisma } = require('../shared/prisma');
 const { createLabelSchema } = require('../validators/label.validators');
 
+async function checkWorkspaceAccess(boardId, userId) {
+  const board = await prisma.board.findUnique({ 
+    where: { id: boardId },
+    select: { workspaceId: true }
+  });
+  if (!board) return { board: null, workspaceMember: null };
+
+  const workspaceMember = await prisma.workspaceMember.findFirst({ 
+    where: { workspaceId: board.workspaceId, userId } 
+  });
+  
+  return { board, workspaceMember };
+}
+
 
 async function createLabel(req, res) {
     const parsed = createLabelSchema.safeParse(req.body);
@@ -8,8 +22,9 @@ async function createLabel(req, res) {
     const { boardId, name, colorHex } = parsed.data;
 
 
-    const bm = await prisma.boardMember.findFirst({ where: { boardId, userId: req.user.id } });
-    if (!bm) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(boardId, req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
 
     const label = await prisma.label.create({ data: { boardId, name, colorHex } });
@@ -20,8 +35,9 @@ async function createLabel(req, res) {
 async function listLabels(req, res) {
     const { boardId } = req.query;
     if (!boardId) return res.status(400).json({ error: 'boardId required' });
-    const bm = await prisma.boardMember.findFirst({ where: { boardId, userId: req.user.id } });
-    if (!bm) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(boardId, req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
     const labels = await prisma.label.findMany({ where: { boardId }, orderBy: { name: 'asc' } });
     res.json({ labels });
 }

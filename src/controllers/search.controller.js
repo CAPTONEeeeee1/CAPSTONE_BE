@@ -1,5 +1,19 @@
 const { prisma } = require('../shared/prisma');
 
+async function checkWorkspaceAccess(boardId, userId) {
+  const board = await prisma.board.findUnique({ 
+    where: { id: boardId },
+    select: { workspaceId: true }
+  });
+  if (!board) return { board: null, workspaceMember: null };
+
+  const workspaceMember = await prisma.workspaceMember.findFirst({ 
+    where: { workspaceId: board.workspaceId, userId } 
+  });
+  
+  return { board, workspaceMember };
+}
+
 
 async function searchCards(req, res) {
   try {
@@ -16,11 +30,9 @@ async function searchCards(req, res) {
 
     if (!boardId) return res.status(400).json({ error: 'boardId required' });
 
-    const bm = await prisma.boardMember.findFirst({
-      where: { boardId: String(boardId), userId: req.user.id },
-      select: { id: true },
-    });
-    if (!bm) return res.status(403).json({ error: 'Not a board member' });
+    const { board, workspaceMember } = await checkWorkspaceAccess(String(boardId), req.user.id);
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
     const whereClauses = ['c."boardId" = $1'];
     const params = [String(boardId)];
