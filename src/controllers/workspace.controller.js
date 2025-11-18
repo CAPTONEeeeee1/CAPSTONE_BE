@@ -1,5 +1,7 @@
 const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
+const { sendWorkspaceInvitationNotification, sendInvitationResponseNotification } = require('../services/notification.service');
+
 
 
 async function createWorkspace(req, res) {
@@ -14,7 +16,7 @@ async function createWorkspace(req, res) {
     });
     res.status(201).json({ workspace: ws });
 }
-    
+
 async function updateWorkspace(req, res) {
     const { workspaceId } = req.params;
     const parsed = updateWorkspaceSchema.safeParse(req.body);
@@ -76,12 +78,12 @@ async function getWorkspaceMembers(req, res) {
             id: true,
             role: true,
             joinedAt: true,
-            user: { 
-                select: { 
-                    id: true, 
-                    email: true, 
+            user: {
+                select: {
+                    id: true,
+                    email: true,
                     fullName: true
-                } 
+                }
             }
         }
     });
@@ -121,6 +123,15 @@ async function inviteMember(req, res) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
+    // Delete any old invitations (accepted, rejected, expired) to avoid unique constraint error
+    await prisma.workspaceInvitation.deleteMany({
+        where: {
+            workspaceId,
+            email,
+            status: { not: 'pending' }
+        }
+    });
+
     const invitation = await prisma.workspaceInvitation.create({
         data: {
             workspaceId,
@@ -129,6 +140,13 @@ async function inviteMember(req, res) {
             invitedById: req.user.id,
             expiresAt
         }
+    });
+
+    sendWorkspaceInvitationNotification({
+        inviterId: req.user.id,
+        receiverEmail: email,
+        workspace,
+        invitationId: invitation.id
     });
 
     res.status(201).json({ invitation });
@@ -145,10 +163,6 @@ async function acceptInvitation(req, res) {
 
     if (invitation.status !== 'pending') {
         return res.status(400).json({ error: 'Invitation is not pending' });
-    }
-
-    if (invitation.email !== req.user.email) {
-        return res.status(403).json({ error: 'This invitation is not for you' });
     }
 
     if (new Date() > invitation.expiresAt) {
@@ -180,21 +194,33 @@ async function acceptInvitation(req, res) {
 
         await tx.workspaceInvitation.update({
             where: { id: invitationId },
-            data: { 
+            data: {
                 status: 'accepted',
                 respondedAt: new Date()
             }
         });
     });
 
-    res.json({ message: 'Invitation accepted successfully' });
+    sendInvitationResponseNotification({
+        inviterId: invitation.invitedById,
+        responderId: req.user.id,
+        workspace: invitation.workspace,
+        accepted: true
+    });
+
+    res.json({
+        message: 'Invitation accepted successfully',
+        workspaceId: invitation.workspaceId,
+        workspace: invitation.workspace
+    });
 }
 
 async function rejectInvitation(req, res) {
     const { invitationId } = req.params;
 
     const invitation = await prisma.workspaceInvitation.findUnique({
-        where: { id: invitationId }
+        where: { id: invitationId },
+        include: { workspace: true }
     });
     if (!invitation) return res.status(404).json({ error: 'Invitation not found' });
 
@@ -208,10 +234,17 @@ async function rejectInvitation(req, res) {
 
     await prisma.workspaceInvitation.update({
         where: { id: invitationId },
-        data: { 
+        data: {
             status: 'rejected',
             respondedAt: new Date()
         }
+    });
+
+    sendInvitationResponseNotification({
+        inviterId: invitation.invitedById,
+        responderId: req.user.id,
+        workspace: invitation.workspace,
+        accepted: false
     });
 
     res.json({ message: 'Invitation rejected successfully' });
@@ -219,7 +252,7 @@ async function rejectInvitation(req, res) {
 
 async function listMyInvitations(req, res) {
     const invitations = await prisma.workspaceInvitation.findMany({
-        where: { 
+        where: {
             email: req.user.email,
             status: 'pending'
         },

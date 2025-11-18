@@ -9,6 +9,7 @@ const cardRoutes = require('./card.route');
 
 const labelRoutes = require('./label.route');
 const commentRoutes = require('./comment.route');
+const notificationRoutes = require('./notification.route');
 
 router.use('/auth', authRoutes);
 router.use('/workspaces', workspaceRoutes);
@@ -17,5 +18,6 @@ router.use('/lists', listRoutes);
 router.use('/cards', cardRoutes);
 router.use('/labels', labelRoutes);
 router.use('/comments', commentRoutes);
+router.use('/notifications', notificationRoutes);
 
 module.exports = router;
