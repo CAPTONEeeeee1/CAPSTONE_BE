@@ -35,13 +35,7 @@ async function rotateRefreshToken(currentToken, user, ua, ip) {
     const token = await prisma.refreshToken.findFirst({ where: { tokenHash: hash, userId: user.id, revokedAt: null } });
     if (!token) throw new Error('Refresh token not found');
     if (token.expiresAt < new Date()) throw new Error('Refresh token expired');
-
-
-    // revoke current
     await prisma.refreshToken.update({ where: { id: token.id }, data: { revokedAt: new Date() } });
-
-
-    // new pair
     return issueTokenPair(user, ua, ip);
 }
 

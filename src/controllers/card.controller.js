@@ -1,6 +1,7 @@
 const { prisma } = require('../shared/prisma');
 const { createCardSchema, updateCardSchema, moveCardSchema, assignMemberSchema } = require('../validators/card.validators');
 const { sendTaskAssignedNotification } = require('../services/notification.service');
+const { logActivity, getClientInfo } = require('../services/activity.service');
 
 
 async function checkWorkspaceAccess(boardId, userId) {
@@ -169,6 +170,18 @@ async function createCard(req, res) {
     ]);
 
     const humanKey = makeBoardKey(boardInfo.keySlug, keySeq);
+
+    const clientInfo = getClientInfo(req);
+    logActivity({
+        userId: req.user.id,
+        action: 'card_created',
+        entityType: 'card',
+        entityId: card.id,
+        entityName: card.title,
+        metadata: { boardId: card.boardId, listId: card.listId, key: humanKey },
+        ...clientInfo
+    });
+
     return res.status(201).json({
         card: {
             id: card.id,

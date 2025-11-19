@@ -6,10 +6,12 @@ const workspaceRoutes = require('./workspace.route');
 const boardRoutes = require('./board.route');
 const listRoutes = require('./list.route');
 const cardRoutes = require('./card.route');
-
 const labelRoutes = require('./label.route');
 const commentRoutes = require('./comment.route');
 const notificationRoutes = require('./notification.route');
+const adminRoutes = require('./admin.route');
+const reportRoutes = require('./report.route');
+const activityRoutes = require('./activity.route');
 
 router.use('/auth', authRoutes);
 router.use('/workspaces', workspaceRoutes);
@@ -19,5 +21,8 @@ router.use('/cards', cardRoutes);
 router.use('/labels', labelRoutes);
 router.use('/comments', commentRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/admin', adminRoutes);
+router.use('/reports', reportRoutes);
+router.use('/activities', activityRoutes);
 
 module.exports = router;

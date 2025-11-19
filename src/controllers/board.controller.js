@@ -122,4 +122,23 @@ async function deleteBoard(req, res) {
   return res.json({ message: 'Board deleted successfully' });
 }
 
-module.exports = { createBoard, getWorkSpaceBoards, getBoard, renameBoard, deleteBoard };
+async function togglePinBoard(req, res) {
+  const { boardId } = req.params;
+
+  const board = await prisma.board.findUnique({ where: { id: boardId } });
+  if (!board) return res.status(404).json({ error: 'Board not found' });
+
+  const workspaceMember = await prisma.workspaceMember.findFirst({ 
+    where: { workspaceId: board.workspaceId, userId: req.user.id } 
+  });
+  if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+
+  const updated = await prisma.board.update({
+    where: { id: boardId },
+    data: { isPinned: !board.isPinned }
+  });
+
+  return res.json({ board: updated });
+}
+
+module.exports = { createBoard, getWorkSpaceBoards, getBoard, renameBoard, deleteBoard, togglePinBoard };

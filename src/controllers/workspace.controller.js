@@ -1,7 +1,7 @@
 const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
 const { sendWorkspaceInvitationNotification, sendInvitationResponseNotification } = require('../services/notification.service');
-
+const { logActivity, getClientInfo } = require('../services/activity.service');
 
 
 async function createWorkspace(req, res) {
@@ -14,6 +14,17 @@ async function createWorkspace(req, res) {
         await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'owner', joinedAt: new Date() } });
         return workspace;
     });
+
+    const clientInfo = getClientInfo(req);
+    logActivity({
+        userId: req.user.id,
+        action: 'workspace_created',
+        entityType: 'workspace',
+        entityId: ws.id,
+        entityName: ws.name,
+        ...clientInfo
+    });
+
     res.status(201).json({ workspace: ws });
 }
 

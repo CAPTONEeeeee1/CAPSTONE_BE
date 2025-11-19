@@ -1,5 +1,9 @@
 const { prisma } = require('../shared/prisma');
-const { sendEmail, getOTPEmailTemplate } = require('./email.service');
+const { sendEmail, getOTPEmailTemplate, getPasswordResetCodeEmailTemplate } = require('./email.service');
+const { hashPassword, verifyPassword } = require('../utils/hash');
+
+const OTP_EXPIRES_MINUTES = parseInt(process.env.OTP_EXPIRES_MINUTES || '10', 10);
+
 
 /**
  * Generate a 6-digit OTP
@@ -14,7 +18,7 @@ function generateOTP() {
 async function createEmailVerification(userId, userEmail, userFullName) {
     const otp = generateOTP();
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minutes
+    expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRES_MINUTES);
 
     // Delete old unverified OTPs
     await prisma.emailVerification.deleteMany({
@@ -61,10 +65,6 @@ async function verifyOTP(userId, otp) {
 
     if (!verification) {
         throw new Error('No verification request found');
-    }
-
-    if (verification.verifiedAt) {
-        throw new Error('Email already verified');
     }
 
     if (new Date() > verification.expiresAt) {
@@ -124,8 +124,102 @@ async function resendVerificationEmail(userId) {
     return createEmailVerification(user.id, user.email, user.fullName);
 }
 
+async function createPasswordResetRequest(userEmail) {
+    const user = await prisma.user.findUnique({ where: { email: userEmail } });
+    
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    const resetCode = generateOTP();
+    const codeHash = await hashPassword(resetCode);
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRES_MINUTES);
+
+    await prisma.passwordReset.deleteMany({
+        where: {
+            userId: user.id
+        }
+    });
+
+    await prisma.passwordReset.create({
+        data: {
+            userId: user.id,
+            codeHash,
+            attempts: 0,
+            expiresAt
+        }
+    });
+
+    const emailHtml = getPasswordResetCodeEmailTemplate(user.fullName || 'User', resetCode);
+    
+    await sendEmail({
+        to: user.email,
+        subject: '🔑 Reset Password Code - PlanNex',
+        html: emailHtml
+    });
+
+    return { success: true };
+}
+
+async function resetPasswordWithCode(userEmail, code, newPassword) {
+    const user = await prisma.user.findUnique({ where: { email: userEmail } });
+    
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    const reset = await prisma.passwordReset.findFirst({
+        where: {
+            userId: user.id,
+            usedAt: null
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    if (!reset) {
+        throw new Error('No password reset request found');
+    }
+
+    if (new Date() > reset.expiresAt) {
+        throw new Error('Reset code expired. Please request a new one');
+    }
+
+    if (reset.attempts >= 5) {
+        throw new Error('Too many failed attempts. Please request a new reset code');
+    }
+
+    const isValidCode = await verifyPassword(code, reset.codeHash);
+    if (!isValidCode) {
+        await prisma.passwordReset.update({
+            where: { id: reset.id },
+            data: { attempts: reset.attempts + 1 }
+        });
+
+        const remainingAttempts = 5 - (reset.attempts + 1);
+        throw new Error(`Invalid reset code. ${remainingAttempts} attempts remaining`);
+    }
+
+    const newPasswordHash = await hashPassword(newPassword);
+
+    await prisma.$transaction([
+        prisma.passwordReset.update({
+            where: { id: reset.id },
+            data: { usedAt: new Date() }
+        }),
+        prisma.user.update({
+            where: { id: user.id },
+            data: { passwordHash: newPasswordHash }
+        })
+    ]);
+
+    return { success: true };
+}
+
 module.exports = {
     createEmailVerification,
     verifyOTP,
-    resendVerificationEmail
+    resendVerificationEmail,
+    createPasswordResetRequest,
+    resetPasswordWithCode
 };

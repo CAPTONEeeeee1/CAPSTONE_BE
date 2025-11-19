@@ -1,17 +1,23 @@
 const nodemailer = require('nodemailer');
 
+const EMAIL_SERVICE = process.env.EMAIL_SERVICE;
+const EMAIL_SENDER = process.env.EMAIL_SENDER;
+const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD;
+const OTP_EXPIRES_MINUTES = parseInt(process.env.OTP_EXPIRES_MINUTES || '10', 10);
+
+
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    service: EMAIL_SERVICE,
     auth: {
-        user: 'dariusishaffero@gmail.com',
-        pass: 'qiui bmij ghvk lrvu'
+        user: EMAIL_SENDER,
+        pass: EMAIL_APP_PASSWORD
     }
 });
 
 async function sendEmail({ to, subject, html }) {
     try {
         await transporter.sendMail({
-            from: '"PlanNex" <dariusishaffero@gmail.com>',
+            from: `"PlanNex" <${EMAIL_SENDER}>`,
             to,
             subject,
             html
@@ -170,10 +176,70 @@ function getOTPEmailTemplate(fullName, otp) {
                     <div class="warning">
                         <p><strong>⚠️ Lưu ý quan trọng:</strong></p>
                         <ul style="margin: 10px 0; padding-left: 20px;">
-                            <li>Mã OTP có hiệu lực trong <strong>10 phút</strong></li>
+                            <li>Mã OTP có hiệu lực trong <strong>${OTP_EXPIRES_MINUTES} phút</strong></li>
                             <li>Bạn có <strong>5 lần thử</strong> để nhập đúng mã</li>
                             <li>Không chia sẻ mã này với bất kỳ ai</li>
                             <li>Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer">
+                    <p>Email này được gửi từ <strong>PlanNex</strong></p>
+                    <p>Nếu bạn gặp vấn đề, vui lòng liên hệ support@plannex.com</p>
+                    <p style="margin-top: 10px; color: #999;">© 2025 PlanNex. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+function getPasswordResetCodeEmailTemplate(fullName, resetCode) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                .header { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 40px 20px; text-align: center; }
+                .header h1 { color: white; margin: 0; font-size: 28px; }
+                .content { padding: 40px 30px; }
+                .code-box { background: linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%); padding: 30px; border-radius: 12px; text-align: center; margin: 30px 0; border: 3px solid #dc3545; }
+                .code { font-size: 48px; font-weight: bold; color: #dc3545; letter-spacing: 8px; font-family: 'Courier New', monospace; text-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
+                .code-label { font-size: 14px; color: #666; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 2px; }
+                .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef; }
+                .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px; }
+                .info-box { background: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🔑 Mã Đặt Lại Mật Khẩu</h1>
+                </div>
+                <div class="content">
+                    <p>Xin chào <strong>${fullName}</strong>,</p>
+                    <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản PlanNex của bạn.</p>
+                    <p>Đây là mã xác nhận để đặt lại mật khẩu:</p>
+                    
+                    <div class="code-box">
+                        <div class="code-label">Mã đặt lại mật khẩu</div>
+                        <div class="code">${resetCode}</div>
+                    </div>
+                    
+                    <div class="info-box">
+                        <p style="margin: 0;"><strong>📱 Cách sử dụng:</strong></p>
+                        <p style="margin: 10px 0 0 0;">Nhập mã này vào trang xác nhận để tiếp tục đặt lại mật khẩu.</p>
+                    </div>
+                    
+                    <div class="warning">
+                        <p><strong>⚠️ Lưu ý quan trọng:</strong></p>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li>Mã có hiệu lực trong <strong>${OTP_EXPIRES_MINUTES} phút</strong></li>
+                            <li>Không chia sẻ mã này với bất kỳ ai</li>
+                            <li>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này</li>
+                            <li>Để bảo mật tài khoản, hãy đổi mật khẩu ngay sau khi nhận được email này</li>
                         </ul>
                     </div>
                 </div>
@@ -193,5 +259,6 @@ module.exports = {
     getWorkspaceInvitationEmailTemplate,
     getTaskAssignedEmailTemplate,
     getInvitationResponseEmailTemplate,
-    getOTPEmailTemplate
+    getOTPEmailTemplate,
+    getPasswordResetCodeEmailTemplate
 };

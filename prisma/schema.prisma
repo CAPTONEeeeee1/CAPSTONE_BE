@@ -25,6 +25,7 @@ model User {
   fullName          String
   avatar            String?
   description       String?
+  role              String    @default("user") // user|admin
   status            String    @default("pending") // pending|active|suspended
   emailVerified     Boolean   @default(false)
   emailVerifiedAt   DateTime?
@@ -35,6 +36,7 @@ model User {
   // Tokens
   refreshTokens     RefreshToken[]
   emailVerifications EmailVerification[]
+  passwordResets    PasswordReset[]
 
   // === Back-relations (để fix lỗi) ===
   // Workspace owner
@@ -68,6 +70,9 @@ model User {
   notificationsSent     Notification[]        @relation("NotificationSender")
   notificationsReceived Notification[]        @relation("NotificationReceiver")
   notificationSettings  NotificationSetting[]
+  
+  // Activity logs
+  activityLogs          ActivityLog[]
 }
 
 model RefreshToken {
@@ -322,4 +327,37 @@ model EmailVerification {
 
   @@index([userId])
   @@index([otp])
+}
+
+model PasswordReset {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String    // Bcrypt hashed reset code
+  attempts   Int       @default(0) // Track failed attempts
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  action      String   // user_login|user_logout|workspace_created|workspace_deleted|board_created|card_created|card_updated|card_deleted|member_added|member_removed|etc
+  entityType  String?  // workspace|board|card|user|etc
+  entityId    String?
+  entityName  String?
+  metadata    Json?    // Additional data (old values, new values, etc)
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([action])
+  @@index([entityType, entityId])
 }
