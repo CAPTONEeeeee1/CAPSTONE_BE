@@ -4,8 +4,8 @@ const { hashPassword, verifyPassword } = require('../utils/hash');
 const { registerSchema, loginSchema, updateProfileSchema, changePasswordSchema, emailSchema, resetPasswordSchema, verifyOtpSchema } = require('../validators/auth.validators'); 
 const { verifyRefresh } = require('../utils/jwt');
 const { issueTokenPair, rotateRefreshToken, revokeRefreshToken } = require('../services/token.service');
-// SỬA LỖI: Import đúng service để gửi email OTP và xác thực
-const { createEmailVerification, resendVerificationEmail, createPasswordResetRequest, verifyOTP } = require('../services/verification.service');
+// SỬA LỖI: Import đúng các service cần thiết
+const { createEmailVerification, resendVerificationEmail, verifyOTP, createPasswordResetRequest, resetPasswordWithCode } = require('../services/verification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service'); 
 
 
@@ -348,21 +348,11 @@ async function sendResetCode(req, res) {
              return res.json({ success: true, message: 'Mã đặt lại đã được gửi, vui lòng kiểm tra email' });
         }
         
-        // Tạo và lưu mã reset mới (dùng lại trường verificationToken)
-        const resetCode = generateOtp();
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { verificationToken: resetCode }
-        });
-
-        // Gửi email reset
-        // SỬA LỖI: Gọi đúng hàm createPasswordResetRequest
+        // SỬA LỖI: Chỉ gọi hàm createPasswordResetRequest để xử lý toàn bộ logic
         await createPasswordResetRequest(user.email);
 
-        return res.json({
-            success: true,
-            message: 'Mã đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email'
-        });
+        // Trả về thông báo chung để bảo mật
+        return res.json({ success: true, message: 'Nếu email của bạn tồn tại trong hệ thống, một mã đặt lại mật khẩu đã được gửi.' });
     } catch (error) {
         console.error('sendResetCode error:', error);
         return res.status(500).json({ error: 'Lỗi gửi mã đặt lại. Vui lòng thử lại.' });
@@ -381,24 +371,8 @@ async function resetPassword(req, res) {
     }
 
     try {
-        const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-
-        if (!user) return res.status(400).json({ error: 'Email không tồn tại.' });
-        
-        // Kiểm tra mã reset (OTP)
-        if (user.verificationToken !== code.toString() || !user.verificationToken) {
-            return res.status(401).json({ error: 'Mã đặt lại không hợp lệ hoặc đã hết hạn.' });
-        }
-
-        // Hash mật khẩu mới và cập nhật
-        const newPasswordHash = await hashPassword(newPassword);
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { 
-                passwordHash: newPasswordHash,
-                verificationToken: null, // Xóa mã reset sau khi dùng
-            }
-        });
+        // SỬA LỖI: Gọi hàm resetPasswordWithCode để xử lý toàn bộ logic
+        await resetPasswordWithCode(normalizedEmail, code, newPassword);
 
         return res.json({
             success: true,
@@ -406,7 +380,8 @@ async function resetPassword(req, res) {
         });
     } catch (error) {
         console.error('resetPassword error:', error);
-        return res.status(500).json({ error: 'Lỗi đặt lại mật khẩu. Vui lòng thử lại.' });
+        // Trả về lỗi cụ thể từ service nếu có
+        return res.status(400).json({ error: error.message || 'Lỗi đặt lại mật khẩu. Vui lòng thử lại.' });
     }
 }
 

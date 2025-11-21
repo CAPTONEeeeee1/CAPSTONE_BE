@@ -48,7 +48,7 @@ router.post('/resend-verification', resendVerification);
 // Forgot password
 
 // Gửi mã đặt lại mật khẩu (OTP) (Từ Code 2)
-router.post('/send-forgot-password-otp', sendResetCode); 
+router.post('/send-reset-code', sendResetCode); 
 router.post('/reset-password', resetPassword); 
 
 
