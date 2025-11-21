@@ -1,42 +1,43 @@
 require("dotenv").config();
 const express = require("express");
-const cors = require("cors"); // Sửa lỗi cors: sử dụng const
-const routes = require("./routes"); // Đặt require routes ở đây
+const cors = require("cors"); 
+const passport = require('./config/passport.config'); // Cấu hình Passport
+const routes = require("./routes"); 
 
-// KHỞI TẠO APP
-// Dòng này phải đứng trước TẤT CẢ các lệnh app.use()
+// --- KHỞI TẠO APP ---
 const app = express(); 
 
-// Import Passport sau khi 'app' được khởi tạo để tránh side-effect
-// Tuy nhiên, Passport không nên phụ thuộc vào 'app' khi được require.
-// Giữ nguyên vị trí require ở trên để cấu trúc code rõ ràng, 
-// nhưng nếu vẫn lỗi, hãy thử di chuyển require('./config/passport.config') xuống đây.
-
-const passport = require('./config/passport.config'); 
-
-
-// MIDDLEWARE CHUNG
+// --- MIDDLEWARE CHUNG ---
 
 // Cấu hình CORS
-let corsOptions = {
-    // Tùy chọn: Dùng process.env.CORS_ORIGINS để cấu hình động nếu cần, 
-    // hoặc giữ '*' nếu bạn muốn cho phép mọi origin.
-    origin: '*', 
-}
+// Lấy danh sách origins từ biến môi trường (nếu có), nếu không dùng '*'
+const allowedOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()) : ['*'];
+
+const corsOptions = {
+    origin: allowedOrigins.includes('*') ? '*' : allowedOrigins,
+    // Tùy chọn: Thêm credentials: true nếu bạn cần gửi cookies/tokens qua CORS
+    // credentials: true, 
+};
+
 app.use(cors(corsOptions)); 
 
 // Parser cho JSON
 app.use(express.json());
 
-// KHỞI TẠO PASSPORT
+// KHỞI TẠO PASSPORT (Cần thiết cho Auth Controller)
 app.use(passport.initialize());
 
 
 // KHAI BÁO CÁC ROUTE
-// Loại bỏ tiền tố '/api' theo yêu cầu
+// Sử dụng root path '/' (đã loại bỏ tiền tố /api để giữ sự nhất quán)
 app.use('/', routes);
 
 
-// KHỞI ĐỘNG SERVER
+// --- KHỞI ĐỘNG SERVER ---
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    if (process.env.NODE_ENV === 'development') {
+        console.log(`CORS Origins configured: ${allowedOrigins.join(', ')}`);
+    }
+});

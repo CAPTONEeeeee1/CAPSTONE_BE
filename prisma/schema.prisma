@@ -1,11 +1,12 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://prisly.d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
+  // Tối ưu hóa từ Code 2
+  engineType = "binary"
+  previewFeatures = ["fullTextSearchPostgres"]
+  binaryTargets = ["native"]
 }
 
 datasource db {
@@ -14,49 +15,70 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  phone           String?   @unique
-  passwordHash    String
-  fullName        String
-  status          String    @default("active") // active | pending
-  lastLoginAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+// =======================================================
+// === CORE ENTITIES ===
+// =======================================================
 
-  // === THÊM CÁC CỘT MỚI CHO AUTH ===
-  // Xác định phương thức đăng nhập: 'email' (default) hoặc 'google'
-  authMethod      String    @default("email") 
-  // Token dùng để xác minh email thủ công (nếu status = 'pending')
-  verificationToken String? 
+model User {
+  id                String            @id @default(cuid())
+  email             String            @unique
+  phone             String?           @unique
+  passwordHash      String
+  fullName          String
+  
+  // === TRƯỜNG BỔ SUNG TỪ CODE 2 ===
+  avatar            String?
+  description       String?
+  role              String            @default("user") // user|admin
+  status            String            @default("pending") // pending|active|suspended (Sử dụng pending làm default như Code 2)
+  emailVerified     Boolean           @default(false)
+  emailVerifiedAt   DateTime?
+  
+  // === TRƯỜNG CHUNG ===
+  lastLoginAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // === TRƯỜNG AUTH (Hợp nhất từ Code 1 & 2) ===
+  // Xác định phương thức đăng nhập: 'email' (default) hoặc 'google' (Từ Code 1)
+  authMethod        String            @default("email")
+  // Token dùng để xác minh email thủ công (Code 1 - Giữ lại cho flow đơn giản)
+  verificationToken String?
 
   // Tokens
-  refreshTokens RefreshToken[]
-
-  // === Back-relations ===
-  // Workspace owner
-  ownedWorkspaces         Workspace[]       @relation("WorkspaceOwner")
-  // Workspace membership
-  workspaceMemberships    WorkspaceMember[] @relation("WorkspaceMembership")
-  // Workspace invitations sent
+  refreshTokens     RefreshToken[]
+  
+  // Bảng xác minh và reset mật khẩu (Từ Code 2)
+  emailVerifications EmailVerification[]
+  passwordResets    PasswordReset[]
+  
+  // === BACK-RELATIONS ===
+  // Workspace ownership & membership
+  ownedWorkspaces   Workspace[]         @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]  @relation("WorkspaceMembership")
+  
+  // Workspace Invitations
   invitedWorkspaceMembers WorkspaceMember[] @relation("WorkspaceInviter")
-
+  workspaceInvitationsSent WorkspaceInvitation[] @relation("WorkspaceInvitationSender") // Từ Code 2
+  
   // Board creator
-  boardsCreated     Board[]         @relation("BoardCreator")
-  // Board membership
-  boardMemberships BoardMember[] @relation("BoardMembership")
-
-  // Card reporter/creator/updater
-  reportedCards Card[] @relation("CardReporter")
-  createdCards  Card[] @relation("CardCreator")
-  updatedCards  Card[] @relation("CardUpdater")
-
-  // Card membership
-  cardMemberships CardMember[] @relation("CardMembership")
-
-  // Comments authored
-  commentsAuthored Comment[] @relation("CommentAuthor")
+  boardsCreated     Board[]             @relation("BoardCreator")
+  
+  // Card relations
+  reportedCards     Card[]              @relation("CardReporter")
+  createdCards      Card[]              @relation("CardCreator")
+  updatedCards      Card[]              @relation("CardUpdater")
+  cardMemberships   CardMember[]        @relation("CardMembership")
+  
+  // Content
+  commentsAuthored  Comment[]           @relation("CommentAuthor")
+  cardAttachmentsUploaded CardAttachment[] @relation("CardAttachmentUploader") // Từ Code 2
+  
+  // Notifications & Activity (Từ Code 2)
+  notificationsSent Notification[]      @relation("NotificationSender")
+  notificationsReceived Notification[]  @relation("NotificationReceiver")
+  notificationSettings NotificationSetting[]
+  activityLogs      ActivityLog[]
 }
 
 model RefreshToken {
@@ -80,11 +102,18 @@ model Workspace {
   description String?
   visibility  String            @default("private") // private|public
   ownerId     String
-  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members     WorkspaceMember[]
+  
+  // Thêm invitations (Từ Code 2)
+  invitations WorkspaceInvitation[] 
+  
   boards      Board[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+
+  // Tùy chọn: Thêm Unique cho tên trong Workspace (nếu cần)
+  // @@unique([ownerId, name])
 }
 
 model WorkspaceMember {
@@ -97,60 +126,85 @@ model WorkspaceMember {
   joinedAt    DateTime?
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  // Đặt tên quan hệ để có back-relations rõ ràng bên User
-  user      User    @relation("WorkspaceMembership", fields: [userId], references: [id], onDelete: Cascade)
-  invitedBy User? @relation("WorkspaceInviter", fields: [invitedById], references: [id])
+  user        User    @relation("WorkspaceMembership", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy   User?   @relation("WorkspaceInviter", fields: [invitedById], references: [id])
 
   @@unique([workspaceId, userId])
   @@index([workspaceId])
 }
 
+// Bảng Lời mời Workspace (Từ Code 2)
+model WorkspaceInvitation {
+  id          String    @id @default(cuid())
+  workspaceId String
+  email       String
+  role        String    @default("member") // admin|member|guest
+  status      String    @default("pending") // pending|accepted|rejected|expired
+  invitedById String
+  invitedAt   DateTime  @default(now())
+  respondedAt DateTime?
+  expiresAt   DateTime
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("WorkspaceInvitationSender", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+  @@index([email])
+  @@index([status])
+}
+
 model Board {
-  id          String        @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   name        String
   keySlug     String?
-  mode        String        @default("private") // private|workspace|public
-  isPinned    Boolean       @default(false)
+  mode        String    @default("private") // private|workspace|public
+  isPinned    Boolean   @default(false)
   archivedAt  DateTime?
   createdById String
 
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy   User          @relation("BoardCreator", fields: [createdById], references: [id])
-  members     BoardMember[]
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation("BoardCreator", fields: [createdById], references: [id])
+  
+  // Loại bỏ BoardMember[] từ Code 1 vì Code 2 không có (giả định thành viên là thành viên Workspace)
+  // boards members (Tuy nhiên, nếu cần tính năng BoardMember riêng, bạn cần bổ sung lại model này)
+  // members     BoardMember[] // Nếu cần BoardMember riêng
+
   lists       List[]
   labels      Label[]
   cards       Card[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
 }
 
-model BoardMember {
-  id        String    @id @default(cuid())
-  boardId   String
-  userId    String
-  role      String    @default("contributor") // admin|maintainer|contributor|viewer
-  invitedBy String?
-  invitedAt DateTime?
-  joinedAt  DateTime?
+// Bổ sung lại BoardMember nếu nó là cần thiết (Dựa trên cấu trúc Code 1)
+// model BoardMember {
+//   id        String    @id @default(cuid())
+//   boardId   String
+//   userId    String
+//   role      String    @default("contributor") // admin|maintainer|contributor|viewer
+//   invitedBy String?
+//   invitedAt DateTime?
+//   joinedAt  DateTime?
 
-  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  user  User  @relation("BoardMembership", fields: [userId], references: [id], onDelete: Cascade)
+//   board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+//   user  User  @relation("BoardMembership", fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([boardId, userId])
-  @@index([boardId])
-}
+//   @@unique([boardId, userId])
+//   @@index([boardId])
+// }
+
 
 model List {
-  id      String  @id @default(cuid())
-  boardId String
-  name    String
+  id       String  @id @default(cuid())
+  boardId  String
+  name     String
   orderIdx Int
-  isDone  Boolean @default(false)
+  isDone   Boolean @default(false)
 
   board Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
   cards Card[]
@@ -161,7 +215,7 @@ model List {
 }
 
 model Card {
-  id          String    @id @default(cuid())
+  id          String  @id @default(cuid())
   boardId     String
   listId      String
   keySeq      Int
@@ -169,27 +223,28 @@ model Card {
   description String?
   dueDate     DateTime?
   startDate   DateTime?
-  priority    String    @default("medium") // low|medium|high|urgent
+  priority    String  @default("medium") // low|medium|high|urgent
   reporterId  String?
   createdById String
   updatedById String?
   orderIdx    Int
   archivedAt  DateTime?
   custom      Json?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
   list  List  @relation(fields: [listId], references: [id], onDelete: Cascade)
 
-  // Đặt tên quan hệ rõ ràng tới User
-  reporter  User? @relation("CardReporter", fields: [reporterId], references: [id])
-  createdBy User  @relation("CardCreator", fields: [createdById], references: [id])
-  updatedBy User? @relation("CardUpdater", fields: [updatedById], references: [id])
+  // Quan hệ tới User
+  reporter    User? @relation("CardReporter", fields: [reporterId], references: [id])
+  createdBy   User  @relation("CardCreator", fields: [createdById], references: [id])
+  updatedBy   User? @relation("CardUpdater", fields: [updatedById], references: [id])
 
-  members  CardMember[]
-  labels   CardLabel[]
-  comments Comment[]
+  members     CardMember[]
+  labels      CardLabel[]
+  comments    Comment[]
+  attachments CardAttachment[] // Từ Code 2
 
   @@unique([boardId, keySeq])
   @@index([boardId, listId, orderIdx])
@@ -228,8 +283,25 @@ model CardLabel {
   @@id([cardId, labelId])
 }
 
+// Bảng Tệp đính kèm Thẻ (Từ Code 2)
+model CardAttachment {
+  id           String    @id @default(cuid())
+  cardId       String
+  fileName     String
+  fileSize     Int
+  mimeType     String
+  fileUrl      String
+  uploadedById String
+  uploadedAt   DateTime  @default(now())
+
+  card       Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation("CardAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+}
+
 model Comment {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   cardId    String
   authorId  String
   parentId  String?
@@ -243,4 +315,94 @@ model Comment {
   // Self relation: parent <-> children
   parent    Comment?  @relation("CommentParent", fields: [parentId], references: [id], onDelete: SetNull)
   children Comment[] @relation("CommentParent")
+}
+
+
+// =======================================================
+// === SYSTEM & AUTH EXTENSIONS (TỪ CODE 2) ===
+// =======================================================
+
+// Bảng Thông báo (Từ Code 2)
+model Notification {
+  id             String    @id @default(cuid())
+  type           String    // workspace_invitation|task_assigned|invitation_accepted|invitation_rejected
+  title          String
+  message        String
+  senderId       String?
+  receiverId     String
+  workspaceId    String?
+  cardId         String?
+  invitationId   String?
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  sender   User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
+  receiver User  @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([receiverId, isRead])
+  @@index([receiverId, createdAt])
+}
+
+// Cài đặt Thông báo (Từ Code 2)
+model NotificationSetting {
+  id                        String  @id @default(cuid())
+  userId                    String  @unique
+  emailNotifications        Boolean @default(true)
+  taskAssignedEmail         Boolean @default(true)
+  workspaceInviteEmail      Boolean @default(true)
+  invitationResponseEmail   Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Bảng Xác minh Email (Từ Code 2 - cho flow nâng cao)
+model EmailVerification {
+  id         String    @id @default(cuid())
+  userId     String
+  otp        String    // 6-digit OTP code
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([otp])
+}
+
+// Bảng Reset Mật khẩu (Từ Code 2)
+model PasswordReset {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String    // Bcrypt hashed reset code
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Bảng Ghi lại Hoạt động (Từ Code 2)
+model ActivityLog {
+  id          String    @id @default(cuid())
+  userId      String
+  action      String    // user_login|workspace_created|card_created|etc
+  entityType  String?   // workspace|board|card|user|etc
+  entityId    String?
+  entityName  String?
+  metadata    Json?     // Additional data (old values, new values, etc)
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([action])
+  @@index([entityType, entityId])
 }

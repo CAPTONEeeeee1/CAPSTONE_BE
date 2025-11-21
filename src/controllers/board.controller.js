@@ -1,44 +1,168 @@
 const { prisma } = require('../shared/prisma');
-const { createBoardSchema } = require('../validators/board.validators');
+// Sử dụng tất cả các validators cần thiết
+const { createBoardSchema, renameBoardSchema } = require('../validators/board.validators'); 
 
+// --- HÀM HỖ TRỢ (Nếu cần, nhưng đã được tích hợp trong getBoard/deleteBoard) ---
 
 async function createBoard(req, res) {
-  const parsed = createBoardSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { workspaceId, name, mode, keySlug } = parsed.data;
+    const parsed = createBoardSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { workspaceId, name, mode, keySlug } = parsed.data;
 
-  const m = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: req.user.id } });
-  if (!m) return res.status(403).json({ error: 'Not in workspace' });
+    const m = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: req.user.id } });
+    if (!m) return res.status(403).json({ error: 'Not in workspace' });
 
-  const result = await prisma.$transaction(async (tx) => {
-    const b = await tx.board.create({
-      data: { workspaceId, name, mode, keySlug, createdById: req.user.id }
+    // Yêu cầu quyền owner hoặc admin để tạo boards (từ >>>>>>> main)
+    if (!['owner', 'admin'].includes(m.role)) {
+        return res.status(403).json({ error: 'Only workspace owner and admin can create boards' });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+        const b = await tx.board.create({
+            data: { workspaceId, name, mode, keySlug, createdById: req.user.id }
+        });
+
+        // SỬA LỖI: Không có model `BoardMember`, quyền truy cập board được quản lý qua `WorkspaceMember`.
+        // Logic tạo thành viên cho board đã bị loại bỏ vì không có model tương ứng.
+        // Quyền truy cập board sẽ được kiểm tra thông qua quyền thành viên trong workspace.
+
+        // Tạo 3 lists mặc định
+        const l1 = await tx.List.create({ data: { boardId: b.id, name: 'Todo', orderIdx: 0 } });
+        const l2 = await tx.List.create({ data: { boardId: b.id, name: 'In Progress', orderIdx: 1 } });
+        const l3 = await tx.List.create({ data: { boardId: b.id, name: 'Done', orderIdx: 2, isDone: true } });
+
+        return { b, lists: [l1, l2, l3] };
     });
 
-    await tx.boardMember.create({
-      data: { boardId: b.id, userId: req.user.id, role: 'admin', joinedAt: new Date() }
-    });
-
-    const l1 = await tx.list.create({ data: { boardId: b.id, name: 'Todo',        orderIdx: 0 } });
-    const l2 = await tx.list.create({ data: { boardId: b.id, name: 'In Progress',  orderIdx: 1 } });
-    const l3 = await tx.list.create({ data: { boardId: b.id, name: 'Done',         orderIdx: 2, isDone: true } });
-
-    return { b, lists: [l1, l2, l3] };
-  });
-
-  return res.status(201).json({ board: result.b, lists: result.lists });
+    return res.status(201).json({ board: result.b, lists: result.lists });
 }
+
+// --- LẤY DANH SÁCH BOARDS CỦA WORKSPACE (Từ >>>>>>> main) ---
+
+async function getWorkSpaceBoards(req, res) {
+    const { workspaceId } = req.params;
+
+    const member = await prisma.workspaceMember.findFirst({
+        where: { workspaceId, userId: req.user.id }
+    });
+    // Kiểm tra quyền: Người dùng phải là thành viên của Workspace
+    if (!member) return res.status(403).json({ error: 'Not in workspace' });
+
+    const boards = await prisma.board.findMany({
+        where: { workspaceId },
+        include: { lists: { orderBy: { orderIdx: 'asc' } } }
+    });
+    return res.json({ boards });
+}
+
+
+// --- LẤY THÔNG TIN CHI TIẾT BOARD ---
 
 async function getBoard(req, res) {
-  const { boardId } = req.params;
-  const member = await prisma.boardMember.findFirst({ where: { boardId, userId: req.user.id } });
-  if (!member) return res.status(403).json({ error: 'Not a board member' });
+    const { boardId } = req.params;
 
-  const board = await prisma.board.findUnique({
-    where: { id: boardId },
-    include: { lists: { orderBy: { orderIdx: 'asc' } } }
-  });
-  return res.json({ board });
+    const board = await prisma.board.findUnique({
+        where: { id: boardId },
+        include: {
+            workspace: true,
+            lists: { orderBy: { orderIdx: 'asc' } }
+        }
+    });
+
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    // Kiểm tra quyền truy cập: Người dùng phải là thành viên Workspace (Logic từ >>>>>>> main)
+    const workspaceMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: board.workspaceId, userId: req.user.id }
+    });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+
+    return res.json({ board });
 }
 
-module.exports = { createBoard, getBoard };
+
+// --- ĐỔI TÊN BOARD (Từ >>>>>>> main) ---
+
+async function renameBoard(req, res) {
+    const { boardId } = req.params;
+    const parsed = renameBoardSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { name } = parsed.data;
+
+    const board = await prisma.board.findUnique({ where: { id: boardId } });
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    const workspaceMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: board.workspaceId, userId: req.user.id }
+    });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+
+    // Kiểm tra trùng tên Board trong cùng Workspace
+    const existingBoard = await prisma.board.findFirst({
+        where: {
+            workspaceId: board.workspaceId,
+            name: name,
+            id: { not: boardId }
+        }
+    });
+    if (existingBoard) {
+        return res.status(400).json({ error: 'Board name already exists in this workspace' });
+    }
+
+    const updatedBoard = await prisma.board.update({
+        where: { id: boardId },
+        data: { name }
+    });
+
+    return res.json({ board: updatedBoard });
+}
+
+
+// --- XÓA BOARD (Từ >>>>>>> main) ---
+
+async function deleteBoard(req, res) {
+    const { boardId } = req.params;
+
+    const board = await prisma.board.findUnique({ where: { id: boardId } });
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    const workspaceMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: board.workspaceId, userId: req.user.id }
+    });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+
+    // Kiểm tra quyền: Chỉ owner hoặc admin mới được xóa board
+    if (!['owner', 'admin'].includes(workspaceMember.role)) {
+        return res.status(403).json({ error: 'Only workspace admin or owner can delete board' });
+    }
+
+    await prisma.board.delete({
+        where: { id: boardId }
+    });
+
+    return res.json({ message: 'Board deleted successfully' });
+}
+
+
+// --- GHIM/BỎ GHIM BOARD (Từ >>>>>>> main) ---
+
+async function togglePinBoard(req, res) {
+    const { boardId } = req.params;
+
+    const board = await prisma.board.findUnique({ where: { id: boardId } });
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    const workspaceMember = await prisma.workspaceMember.findFirst({ 
+        where: { workspaceId: board.workspaceId, userId: req.user.id } 
+    });
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+
+    const updated = await prisma.board.update({
+        where: { id: boardId },
+        data: { isPinned: !board.isPinned }
+    });
+
+    return res.json({ board: updated });
+}
+
+module.exports = { createBoard, getWorkSpaceBoards, getBoard, renameBoard, deleteBoard, togglePinBoard };

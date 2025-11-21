@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const passport = require('passport');
-require('../config/passport.config'); // Đảm bảo cấu hình passport được load
+require('../config/passport.config'); 
+
 
 const { 
     register, 
@@ -8,38 +9,56 @@ const {
     refresh, 
     logout, 
     me, 
-    googleAuthCallback,
-    verifyOtp // IMPORT HÀM XÁC MINH OTP
+    updateProfile,
+    changePassword, 
+    verifyEmail,
+    resendVerification,
+    sendResetCode,
+    resetPassword,
+    googleAuthCallback, 
 } = require('../controllers/auth.controller'); 
 const { auth } = require('../middleware/auth');
 
 
 // ---------------------------------
-// --- EMAIL/PASSWORD ROUTES ---
+// --- EMAIL/PASSWORD & SESSION ---
 // ---------------------------------
+
 router.post('/register', register);
 router.post('/login', login);
 router.post('/refresh', refresh);
 router.post('/logout', logout);
 router.get('/me', auth(true), me);
 
-// *** ROUTE XÁC MINH OTP MỚI ***
-router.post('/verify-otp', verifyOtp);
+// --- PROFILE & PASSWORD MGMT ---
 
-// ---------------------------
-// --- GOOGLE OAUTH ROUTES ---
-// ---------------------------
+// Cập nhật hồ sơ
+router.patch('/me', auth(true), updateProfile); 
+// Thay đổi mật khẩu
+router.post('/change-password', auth(true), changePassword);
 
-// 1. Route Khởi tạo: Bắt đầu quá trình OAuth
+// EMAIL VERIFICATION (OTP)
+
+// Route Xác minh OTP (Dùng tên verify-otp để thống nhất endpoint)
+router.post('/verify-otp', verifyEmail); 
+
+// Gửi lại mã xác minh (Từ Code 2)
+router.post('/resend-verification', resendVerification); 
+
+// Forgot password
+
+// Gửi mã đặt lại mật khẩu (OTP) (Từ Code 2)
+router.post('/send-forgot-password-otp', sendResetCode); 
+router.post('/reset-password', resetPassword); 
+
+
 router.get('/google', passport.authenticate('google', {
     scope: ['profile', 'email'],
     session: false, 
 })); 
 
-// 2. Route Callback: Nhận dữ liệu từ Google
 router.get('/google/callback', 
     passport.authenticate('google', { 
-        // Đã sửa lỗi: Chuyển hướng về /auth khi thất bại
         failureRedirect: '/auth', 
         session: false 
     }),
