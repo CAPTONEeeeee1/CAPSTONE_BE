@@ -33,8 +33,8 @@ app.use(passport.initialize());
 
 
 // KHAI BÁO CÁC ROUTE
-// ⚠️ SỬA: Thay đổi từ "/api" thành "/" để route /auth/google có thể hoạt động
-app.use("/", routes);
+// Loại bỏ tiền tố '/api' theo yêu cầu
+app.use('/', routes);
 
 
 // KHỞI ĐỘNG SERVER

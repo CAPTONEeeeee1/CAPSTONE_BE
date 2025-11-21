@@ -65,8 +65,8 @@ async function register(req, res) {
     });
 
     try {
-        // SỬ DỤNG EMAIL SERVICE THỰC TẾ
-        await sendVerificationEmail(email, verificationToken, fullName);
+        // *** SỬA LỖI: Luôn sử dụng email đã chuẩn hóa để gửi mã OTP ***
+        await sendVerificationEmail(normalizedEmail, verificationToken, fullName);
     } catch (error) {
         console.error("LỖI GỬI EMAIL:", error.message);
     }
@@ -75,7 +75,8 @@ async function register(req, res) {
     return res.status(202).json({ 
         success: true,
         message: 'Đăng ký thành công. Vui lòng kiểm tra email để kích hoạt tài khoản của bạn.',
-        userEmail: email 
+        // *** SỬA LỖI: Trả về đối tượng user đầy đủ để frontend có thể sử dụng ***
+        user: { id: user.id, email: user.email, fullName: user.fullName }
     });
 }
 
@@ -99,24 +100,29 @@ async function verifyOtp(req, res) {
         return res.status(400).json({ error: 'Tài khoản đã được kích hoạt.' });
     }
 
-    if (user.verificationToken !== otp) {
+    // So sánh OTP dưới dạng chuỗi để tránh lỗi kiểu dữ liệu
+    if (user.verificationToken !== otp.toString()) {
         return res.status(401).json({ error: 'Mã xác minh (OTP) không đúng.' });
     }
 
     try {
-        await prisma.user.update({
+        // Cập nhật trạng thái người dùng và lấy lại thông tin mới nhất
+        const updatedUser = await prisma.user.update({
             where: { id: user.id },
             data: {
                 status: 'active',
                 verificationToken: null, 
             }
         });
+
+        // *** CẢI TIẾN: Tự động đăng nhập và cấp token sau khi xác thực thành công ***
+        const pair = await issueTokenPair(updatedUser, pickUA(req), pickIP(req));
+        return res.json({ success: true, message: 'Tài khoản đã được kích hoạt thành công.', user: { id: updatedUser.id, email: updatedUser.email, fullName: updatedUser.fullName }, ...pair });
+
     } catch (e) {
         console.error("Prisma update failed during OTP verification:", e);
         return res.status(500).json({ error: 'Lỗi máy chủ: Không thể kích hoạt tài khoản. Vui lòng thử lại.' });
     }
-    
-    return res.json({ success: true, message: 'Tài khoản đã được kích hoạt thành công.' });
 }
 
 
@@ -201,6 +207,41 @@ async function googleAuthCallback(req, res) {
     );
 }
 
+/**
+ * Gửi lại mã OTP xác thực
+ */
+async function resendVerification(req, res) {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: 'Vui lòng cung cấp email.' });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+    if (!user) {
+        // Trả về thành công giả để tránh lộ thông tin email nào đã đăng ký
+        return res.json({ success: true, message: 'Nếu email của bạn tồn tại trong hệ thống, một mã xác thực mới đã được gửi.' });
+    }
+
+    if (user.status === 'active') {
+        return res.status(400).json({ error: 'Tài khoản này đã được kích hoạt.' });
+    }
+
+    // Tạo và lưu OTP mới
+    const newVerificationToken = generateOtp();
+    await prisma.user.update({
+        where: { id: user.id },
+        data: { verificationToken: newVerificationToken }
+    });
+
+    // Gửi email với OTP mới
+    // *** SỬA LỖI: Luôn sử dụng email đã chuẩn hóa để gửi mã OTP ***
+    await sendVerificationEmail(normalizedEmail, newVerificationToken, user.fullName);
+
+    return res.json({ success: true, message: 'Mã xác thực mới đã được gửi đến email của bạn.' });
+}
+
 
 module.exports = { 
     register, 
@@ -210,5 +251,6 @@ module.exports = {
     me, 
     normalizeEmail, 
     googleAuthCallback,
-    verifyOtp
+    verifyOtp,
+    resendVerification // *** THÊM DÒNG NÀY ***
 };
