@@ -8,7 +8,7 @@ const REFRESH_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS || '3
 
 
 function signAccessToken(user) {
-    const payload = { sub: user.id, email: user.email, name: user.fullName };
+    const payload = { sub: user.id, email: user.email, name: user.fullName, role: user.role, };
     return jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
 }
 

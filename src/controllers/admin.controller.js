@@ -1,251 +1,261 @@
 const { prisma } = require('../shared/prisma');
 const { logActivity, getClientInfo } = require('../services/activity.service');
-const { updateUserStatusSchema, updateUserRoleSchema } = require('../validators/admin.validators');
 
+// --- Lấy danh sách người dùng ---
 async function getAllUsers(req, res) {
-    const { page = 1, limit = 20, status, role, search } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+  const { page = 1, limit = 20, search } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = {};
-    if (status) where.status = status;
-    if (role) where.role = role;
-    if (search) {
-        where.OR = [
-            { email: { contains: search, mode: 'insensitive' } },
-            { fullName: { contains: search, mode: 'insensitive' } }
-        ];
-    }
+  const where = search
+    ? {
+        OR: [
+          { email: { contains: search, mode: 'insensitive' } },
+          { fullName: { contains: search, mode: 'insensitive' } },
+        ],
+      }
+    : {};
 
-    const [users, total] = await Promise.all([
-        prisma.user.findMany({
-            where,
-            select: {
-                id: true,
-                email: true,
-                fullName: true,
-                phone: true,
-                avatar: true,
-                role: true,
-                status: true,
-                emailVerified: true,
-                lastLoginAt: true,
-                createdAt: true,
-                updatedAt: true,
-                _count: {
-                    select: {
-                        ownedWorkspaces: true,
-                        workspaceMemberships: true
-                    }
-                }
-            },
-            orderBy: { createdAt: 'desc' },
-            skip,
-            take: parseInt(limit)
-        }),
-        prisma.user.count({ where })
-    ]);
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        _count: {
+          select: {
+            ownedWorkspaces: true,
+            workspaceMemberships: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.user.count({ where }),
+  ]);
 
-    res.json({
-        users,
-        pagination: {
-            total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(total / parseInt(limit))
-        }
-    });
+  res.json({
+    users,
+    pagination: {
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit)),
+    },
+  });
 }
 
+// --- Lấy chi tiết 1 người dùng ---
 async function getUserDetail(req, res) {
-    const { userId } = req.params;
+  const { userId } = req.params;
 
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      phone: true,
+      role: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: {
         select: {
-            id: true,
-            email: true,
-            fullName: true,
-            phone: true,
-            avatar: true,
-            description: true,
-            role: true,
-            status: true,
-            emailVerified: true,
-            emailVerifiedAt: true,
-            lastLoginAt: true,
-            createdAt: true,
-            updatedAt: true,
-            ownedWorkspaces: {
-                select: {
-                    id: true,
-                    name: true,
-                    createdAt: true
-                }
-            },
-            workspaceMemberships: {
-                select: {
-                    workspace: {
-                        select: {
-                            id: true,
-                            name: true
-                        }
-                    },
-                    role: true,
-                    joinedAt: true
-                }
-            },
-            _count: {
-                select: {
-                    createdCards: true,
-                    commentsAuthored: true,
-                    activityLogs: true
-                }
-            }
-        }
-    });
+          ownedWorkspaces: true,
+          workspaceMemberships: true,
+          createdCards: true,
+        },
+      },
+    },
+  });
 
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json({ user });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ user });
 }
 
+// --- Cập nhật trạng thái người dùng ---
 async function updateUserStatus(req, res) {
-    const { userId } = req.params;
-    const parsed = updateUserStatusSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { status } = parsed.data;
+  const { userId } = req.params;
+  const { status } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-    }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const updated = await prisma.user.update({
-        where: { id: userId },
-        data: { status }
-    });
+  // ❌ Không cho phép thay đổi trạng thái của admin duy nhất
+  if (user.email === 'admin@plannex.com') {
+    return res.status(403).json({ error: 'Cannot modify system admin account' });
+  }
 
-    const clientInfo = getClientInfo(req);
-    logActivity({
-        userId: req.user.id,
-        action: 'admin_update_user_status',
-        entityType: 'user',
-        entityId: userId,
-        entityName: user.email,
-        metadata: { oldStatus: user.status, newStatus: status },
-        ...clientInfo
-    });
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { status },
+  });
 
-    res.json({ user: updated });
+  const clientInfo = getClientInfo(req);
+  await logActivity({
+    userId: req.user.id,
+    action: 'admin_update_user_status',
+    entityType: 'user',
+    entityId: userId,
+    entityName: user.email,
+    metadata: { oldStatus: user.status, newStatus: status },
+    ...clientInfo,
+  });
+
+  res.json({ user: updated });
 }
 
+// --- Cập nhật vai trò người dùng ---
 async function updateUserRole(req, res) {
-    const { userId } = req.params;
-    const parsed = updateUserRoleSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { role } = parsed.data;
+  const { userId } = req.params;
+  const { role } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-    }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
-    if (user.id === req.user.id) {
-        return res.status(400).json({ error: 'Cannot change your own role' });
-    }
+  // ❌ Không cho phép thay đổi vai trò admin mặc định
+  if (user.email === 'admin@plannex.com') {
+    return res.status(403).json({ error: 'Cannot modify system admin account' });
+  }
 
-    const updated = await prisma.user.update({
-        where: { id: userId },
-        data: { role }
-    });
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { role },
+  });
 
-    const clientInfo = getClientInfo(req);
-    logActivity({
-        userId: req.user.id,
-        action: 'admin_update_user_role',
-        entityType: 'user',
-        entityId: userId,
-        entityName: user.email,
-        metadata: { oldRole: user.role, newRole: role },
-        ...clientInfo
-    });
+  const clientInfo = getClientInfo(req);
+  await logActivity({
+    userId: req.user.id,
+    action: 'admin_update_user_role',
+    entityType: 'user',
+    entityId: userId,
+    entityName: user.email,
+    metadata: { oldRole: user.role, newRole: role },
+    ...clientInfo,
+  });
 
-    res.json({ user: updated });
+  res.json({ user: updated });
 }
 
+// --- Cập nhật thông tin cơ bản ---
+async function updateUserInfo(req, res) {
+  const { userId } = req.params;
+  const { fullName, phone } = req.body;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  // ❌ Không cho phép đổi tên hoặc sửa thông tin admin mặc định
+  if (user.email === 'admin@plannex.com') {
+    return res.status(403).json({ error: 'Cannot modify system admin account' });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { fullName, phone },
+  });
+
+  const clientInfo = getClientInfo(req);
+  await logActivity({
+    userId: req.user.id,
+    action: 'admin_update_user_info',
+    entityType: 'user',
+    entityId: userId,
+    entityName: user.email,
+    metadata: { changes: { fullName, phone } },
+    ...clientInfo,
+  });
+
+  res.json({ user: updated });
+}
+
+// --- Xóa người dùng ---
 async function deleteUser(req, res) {
-    const { userId } = req.params;
+  const { userId } = req.params;
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-    }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
-    if (user.id === req.user.id) {
-        return res.status(400).json({ error: 'Cannot delete your own account' });
-    }
+  // ❌ Không cho phép xóa admin duy nhất
+  if (user.email === 'admin@plannex.com') {
+    return res.status(403).json({ error: 'Cannot delete the system admin account' });
+  }
 
-    const clientInfo = getClientInfo(req);
-    logActivity({
-        userId: req.user.id,
-        action: 'admin_delete_user',
-        entityType: 'user',
-        entityId: userId,
-        entityName: user.email,
-        metadata: { deletedUser: { email: user.email, fullName: user.fullName } },
-        ...clientInfo
-    });
+  try {
+    // Xóa dữ liệu liên quan
+    await prisma.workspaceMembership.deleteMany({ where: { userId } });
+    await prisma.board.deleteMany({ where: { ownerId: userId } });
+    await prisma.card.deleteMany({ where: { creatorId: userId } });
+    await prisma.workspace.deleteMany({ where: { ownerId: userId } });
 
     await prisma.user.delete({ where: { id: userId } });
 
-    res.json({ success: true });
+    const clientInfo = getClientInfo(req);
+    await logActivity({
+      userId: req.user.id,
+      action: 'admin_delete_user',
+      entityType: 'user',
+      entityId: userId,
+      entityName: user.email,
+      metadata: { deletedEmail: user.email },
+      ...clientInfo,
+    });
+
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (err) {
+    console.error('Delete user failed:', err);
+    res.status(500).json({ error: 'Cannot delete user, related data exists.' });
+  }
 }
 
 async function getSystemStats(req, res) {
-    const [
-        totalUsers,
-        activeUsers,
-        suspendedUsers,
-        totalWorkspaces,
-        totalBoards,
-        totalCards,
-        recentActivities
-    ] = await Promise.all([
-        prisma.user.count(),
-        prisma.user.count({ where: { status: 'active' } }),
-        prisma.user.count({ where: { status: 'suspended' } }),
-        prisma.workspace.count(),
-        prisma.board.count(),
-        prisma.card.count(),
-        prisma.activityLog.findMany({
-            take: 10,
-            orderBy: { createdAt: 'desc' },
-            include: {
-                user: {
-                    select: { id: true, email: true, fullName: true }
-                }
-            }
-        })
-    ]);
+  const [
+    totalUsers,
+    activeUsers,
+    suspendedUsers,
+    totalWorkspaces,
+    totalBoards,
+    totalCards,
+    recentActivities,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { status: 'active' } }),
+    prisma.user.count({ where: { status: "suspended" } }),
+    prisma.workspace.count(),
+    prisma.board.count(),
+    prisma.card.count(),
+    prisma.activityLog.findMany({
+      take: 10,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, email: true, fullName: true } },
+      },
+    }),
+  ]);
 
-    res.json({
-        stats: {
-            users: { total: totalUsers, active: activeUsers, suspended: suspendedUsers },
-            workspaces: totalWorkspaces,
-            boards: totalBoards,
-            cards: totalCards
-        },
-        recentActivities
-    });
+  res.json({
+    stats: {
+      users: { total: totalUsers, active: activeUsers, suspended: suspendedUsers },
+      workspaces: totalWorkspaces,
+      boards: totalBoards,
+      cards: totalCards,
+    },
+    recentActivities,
+  });
 }
 
 module.exports = {
-    getAllUsers,
-    getUserDetail,
-    updateUserStatus,
-    updateUserRole,
-    deleteUser,
-    getSystemStats
+  getAllUsers,
+  getUserDetail,
+  updateUserStatus,
+  updateUserRole,
+  updateUserInfo,
+  deleteUser,
+  getSystemStats,
 };
