@@ -25,32 +25,32 @@ router.post('/', createWorkspace);
 router.get('/', listMyWorkspaces);
 
 // --- QUẢN LÝ WORKSPACE (CRUD) ---
-// Cập nhật thông tin Workspace 
+// Lấy thông tin chi tiết Workspace theo ID (SỬA LỖI: Thống nhất dùng :workspaceId)
+router.get('/:workspaceId', getWorkspaceById);
+// Cập nhật thông tin Workspace
 router.patch('/:workspaceId', updateWorkspace);
-// Xóa Workspace 
+// Xóa Workspace
 router.delete('/:workspaceId', deleteWorkspace);
 
-// --- TRUY VẤN DỮ LIỆU CỦA WORKSPACE (ID/BOARDS) ---
-// Lấy thông tin chi tiết Workspace theo ID 
-router.get('/:id', getWorkspaceById); 
-// Lấy danh sách Boards của Workspace 
-router.get('/:id/boards', getWorkspaceBoards); 
+// --- TRUY VẤN DỮ LIỆU CỦA WORKSPACE ---
+// Lấy danh sách Boards của Workspace (SỬA LỖI: Thống nhất dùng :workspaceId)
+router.get('/:workspaceId/boards', getWorkspaceBoards);
+// Lấy danh sách thành viên
+router.get('/:workspaceId/members', getWorkspaceMembers);
 
 // --- QUẢN LÝ THÀNH VIÊN & VAI TRÒ ---
-// Lấy danh sách thành viên (Dùng :workspaceId để thống nhất với các route quản lý khác)
-router.get('/:workspaceId/members', getWorkspaceMembers); 
-// Mời thành viên 
-router.post('/:workspaceId/invite', inviteMember);
-// Xóa thành viên 
-router.delete('/:workspaceId/member/:userId', removeMember);
-// Thay đổi vai trò thành viên 
-router.patch('/:workspaceId/member/:userId/role', updateMemberRole);
-// Rời khỏi Workspace 
+// Mời thành viên (SỬA LỖI: Đổi thành /invitations để khớp với FE)
+router.post('/:workspaceId/invitations', inviteMember);
+// Xóa thành viên (SỬA LỖI: Chuẩn hóa thành /members/:userId)
+router.delete('/:workspaceId/members/:userId', removeMember);
+// Thay đổi vai trò thành viên (SỬA LỖI: Chuẩn hóa thành /members/:userId/role)
+router.patch('/:workspaceId/members/:userId/role', updateMemberRole);
+// Rời khỏi Workspace
 router.post('/:workspaceId/leave', leaveWorkspace);
 
 // --- QUẢN LÝ LỜI MỜI ---
-// Xem các lời mời đang chờ 
-router.get('/invitations', listMyInvitations);
+// Xem các lời mời đang chờ của người dùng (SỬA LỖI: Đặt route này ở cuối để tránh xung đột)
+router.get('/invitations/me', listMyInvitations);
 router.post('/invitations/:invitationId/accept', acceptInvitation);
 router.post('/invitations/:invitationId/reject', rejectInvitation);
 

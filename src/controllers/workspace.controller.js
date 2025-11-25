@@ -156,10 +156,10 @@ async function getWorkspaceBoards(req, res) {
 // --- GET WORKSPACE MEMBERS ---
 
 async function getWorkspaceMembers(req, res) {
-    const { id: workspaceId } = req.params;
+    const { workspaceId } = req.params; // SỬA LỖI: Đổi tên từ 'id' thành 'workspaceId' để khớp với route
     // Giả định middleware đã kiểm tra quyền truy cập workspace
     const members = await prisma.workspaceMember.findMany({
-        where: { workspaceId },
+        where: { workspaceId: workspaceId }, // SỬA LỖI: Truyền chính xác workspaceId vào câu lệnh where
         select: {
             id: true,
             role: true,
