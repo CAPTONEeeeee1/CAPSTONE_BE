@@ -14,7 +14,7 @@ async function requireAdmin(req, res, next) {
         return res.status(403).json({ error: 'Account not active' });
     }
 
-    if (user.role !== 'admin') {
+    if (user.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Admin access required' });
     }
 

@@ -2,14 +2,12 @@ const crypto = require('crypto');
 const { prisma } = require('../shared/prisma');
 const { signAccessToken, signRefreshToken, REFRESH_EXPIRES_DAYS } = require('../utils/jwt');
 
-
-/**
-
+/** 
  * @param {string} s
  * @returns {string} 
  */
-function sha256(s) { 
-    return crypto.createHash('sha256').update(s).digest('hex'); 
+function sha256(s) {
+  return crypto.createHash('sha256').update(s).digest('hex');
 }
 
 /**
@@ -20,23 +18,32 @@ function sha256(s) {
  * @returns {object} { accessToken, refreshToken, expiresAt }
  */
 async function issueTokenPair(user, ua, ip) {
-    const jti = crypto.randomUUID();
-    const accessToken = signAccessToken(user);
-    const refreshToken = signRefreshToken(user, jti);
+  const jti = crypto.randomUUID();
 
-    const expiresAt = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
+  // đảm bảo token có role
+  const payload = {
+    id: user.id,
+    email: user.email,
+    name: user.fullName,
+    role: user.role,
+  };
 
-    await prisma.refreshToken.create({
-        data: {
-            userId: user.id,
-            tokenHash: sha256(refreshToken),
-            userAgent: ua,
-            ipAddress: ip,
-            expiresAt
-        }
-    });
+  const accessToken = signAccessToken(payload);
+  const refreshToken = signRefreshToken(payload, jti);
 
-    return { accessToken, refreshToken, expiresAt };
+  const expiresAt = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
+
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: sha256(refreshToken),
+      userAgent: ua,
+      ipAddress: ip,
+      expiresAt,
+    },
+  });
+
+  return { accessToken, refreshToken, expiresAt };
 }
 
 /**
@@ -48,24 +55,21 @@ async function issueTokenPair(user, ua, ip) {
  * @returns {object} { accessToken, refreshToken, expiresAt }
  */
 async function rotateRefreshToken(currentToken, user, ua, ip) {
-    const hash = sha256(currentToken);
-    
-    // 1. Tìm token chưa bị thu hồi và chưa hết hạn
-    const token = await prisma.refreshToken.findFirst({ 
-        where: { tokenHash: hash, userId: user.id, revokedAt: null } 
-    });
-    
-    if (!token) throw new Error('Refresh token not found');
-    if (token.expiresAt < new Date()) throw new Error('Refresh token expired');
+  const hash = sha256(currentToken);
 
-    // 2. Thu hồi token hiện tại (Revoke current token)
-    await prisma.refreshToken.update({ 
-        where: { id: token.id }, 
-        data: { revokedAt: new Date() } 
-    });
+  const token = await prisma.refreshToken.findFirst({
+    where: { tokenHash: hash, userId: user.id, revokedAt: null },
+  });
 
-    // 3. Phát hành cặp token mới và lưu vào DB
-    return issueTokenPair(user, ua, ip);
+  if (!token) throw new Error('Refresh token not found');
+  if (token.expiresAt < new Date()) throw new Error('Refresh token expired');
+
+  await prisma.refreshToken.update({
+    where: { id: token.id },
+    data: { revokedAt: new Date() },
+  });
+
+  return issueTokenPair(user, ua, ip);
 }
 
 /**
@@ -74,13 +78,11 @@ async function rotateRefreshToken(currentToken, user, ua, ip) {
  * @param {number} userId - ID người dùng.
  */
 async function revokeRefreshToken(tokenStr, userId) {
-    const hash = sha256(tokenStr);
-    // Thu hồi tất cả các token khớp với hash và chưa bị thu hồi
-    await prisma.refreshToken.updateMany({ 
-        where: { userId, tokenHash: hash, revokedAt: null }, 
-        data: { revokedAt: new Date() } 
-    });
+  const hash = sha256(tokenStr);
+  await prisma.refreshToken.updateMany({
+    where: { userId, tokenHash: hash, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
 }
-
 
 module.exports = { issueTokenPair, rotateRefreshToken, revokeRefreshToken };
