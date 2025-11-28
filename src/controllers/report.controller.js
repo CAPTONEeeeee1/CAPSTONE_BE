@@ -221,7 +221,149 @@ async function getWorkspaceActivityTimeline(req, res) {
     res.json({ activities });
 }
 
+async function getGlobalReport(req, res) {
+    console.log("--- EXECUTING getGlobalReport ---", new Date());
+    const userId = req.user.id;
+    console.log("User ID:", userId);
+
+    const userWorkspaces = await prisma.workspaceMember.findMany({
+        where: { userId },
+        select: { workspaceId: true }
+    });
+
+    const workspaceIds = userWorkspaces.map(w => w.workspaceId);
+    console.log("Found workspace IDs:", workspaceIds);
+
+
+    if (workspaceIds.length === 0) {
+        console.log("User is not a member of any workspace. Returning empty report.");
+        return res.json({
+            summary: {
+                totalCards: 0,
+                completedCards: 0,
+                inProgressCards: 0,
+                totalMembers: 0
+            },
+            recentActivities: []
+        });
+    }
+
+    const cardFilter = {
+        board: {
+            workspaceId: { in: workspaceIds }
+        }
+    };
+
+    const boardsInWorkspaces = await prisma.board.findMany({
+        where: { workspaceId: { in: workspaceIds } },
+        select: { id: true }
+    });
+    const boardIds = boardsInWorkspaces.map(b => b.id);
+    console.log("Found board IDs in user's workspaces:", boardIds);
+
+
+    const cardsInBoards = await prisma.card.findMany({
+        where: { boardId: { in: boardIds } },
+        select: { id: true }
+    });
+    const cardIds = cardsInBoards.map(c => c.id);
+    console.log("Found card IDs in user's boards:", cardIds);
+
+
+    const [
+        totalCards,
+        completedCards,
+        inProgressCards,
+        totalMembers,
+        recentActivities
+    ] = await Promise.all([
+        prisma.card.count({ where: cardFilter }),
+        prisma.card.count({
+            where: {
+                ...cardFilter,
+                list: { isDone: true }
+            }
+        }),
+        prisma.card.count({
+            where: {
+                ...cardFilter,
+                list: { isDone: false }
+            }
+        }),
+        prisma.workspaceMember.count({
+            where: {
+                workspaceId: { in: workspaceIds }
+            }
+        }),
+        prisma.activityLog.findMany({
+            where: {
+                OR: [
+                    { entityType: 'workspace', entityId: { in: workspaceIds } },
+                    { entityType: 'board', entityId: { in: boardIds } },
+                    { entityType: 'card', entityId: { in: cardIds } }
+                ]
+            },
+            include: {
+                user: {
+                    select: { id: true, fullName: true, email: true, avatar: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10
+        })
+    ]);
+
+    const summary = {
+        totalCards,
+        completedCards,
+        inProgressCards,
+        totalMembers
+    };
+    console.log("Calculated Summary:", summary);
+    console.log("Raw Recent Activities (count):", recentActivities.length);
+
+
+    const populatedActivities = await Promise.all(recentActivities.map(async (activity) => {
+        let workspace = null;
+        if (activity.entityType === 'workspace') {
+            workspace = await prisma.workspace.findUnique({
+                where: { id: activity.entityId },
+                select: { id: true, name: true }
+            });
+        } else if (activity.entityType === 'board') {
+            const board = await prisma.board.findUnique({
+                where: { id: activity.entityId },
+                select: { workspace: { select: { id: true, name: true } } }
+            });
+            workspace = board?.workspace;
+        } else if (activity.entityType === 'card') {
+            const card = await prisma.card.findUnique({
+                where: { id: activity.entityId },
+                select: { board: { select: { workspace: { select: { id: true, name: true } } } } }
+            });
+            workspace = card?.board?.workspace;
+        }
+
+        return {
+            ...activity,
+            details: activity.entityName,
+            workspace
+        };
+    }));
+
+    console.log("Populated Activities (count):", populatedActivities.length);
+
+    const finalResponse = {
+        summary,
+        recentActivities: populatedActivities
+    };
+
+    console.log("--- FINISHED getGlobalReport ---");
+    res.json(finalResponse);
+}
+
 module.exports = {
     getWorkspaceReport,
-    getWorkspaceActivityTimeline
+    getWorkspaceActivityTimeline,
+    getGlobalReport
 };
