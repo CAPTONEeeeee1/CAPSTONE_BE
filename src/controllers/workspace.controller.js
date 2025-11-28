@@ -1,6 +1,6 @@
 const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
-const { sendWorkspaceInvitationNotification, sendInvitationResponseNotification } = require('../services/notification.service');
+const { createNotification, sendWorkspaceInvitationNotification, sendInvitationResponseNotification, sendWorkspaceDeletedNotification } = require('../services/notification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
 
 
@@ -86,7 +86,27 @@ async function deleteWorkspace(req, res) {
         return res.status(403).json({ error: 'Only workspace owner can delete workspace' });
     }
 
+    // Lấy danh sách thành viên trước khi xóa
+    const members = await prisma.workspaceMember.findMany({
+        where: { workspaceId: workspaceId }
+    });
+
     await prisma.workspace.delete({ where: { id: workspaceId } });
+
+    // Lấy tên người xóa để đưa vào thông báo
+    const deleterName = req.user.fullName;
+
+    // Gửi thông báo đến các thành viên khác, bao gồm email
+    for (const member of members) {
+        if (member.userId !== req.user.id) { // Không gửi cho chính người xóa
+            await sendWorkspaceDeletedNotification({
+                deleterId: req.user.id,
+                memberId: member.userId,
+                workspaceName: workspace.name,
+                deleterName: deleterName,
+            });
+        }
+    }
     
     // Log activity (Tùy chọn)
 
@@ -113,13 +133,13 @@ async function listMyWorkspaces(req, res) {
 
 
 async function getWorkspaceById(req, res) {
-    const { id } = req.params;
+    const { workspaceId } = req.params;
     const userId = req.user.id;
 
     try {
         const workspace = await prisma.workspace.findFirst({
             where: {
-                id: id,
+                id: workspaceId,
                 members: { some: { userId: userId } }, // Kiểm tra quyền truy cập
             },
             // Thêm include nếu cần chi tiết hơn (như _count từ listMyWorkspaces)
@@ -143,10 +163,10 @@ async function getWorkspaceById(req, res) {
 
 
 async function getWorkspaceBoards(req, res) {
-    const { id } = req.params;
+    const { workspaceId } = req.params;
     // Giả định middleware đã kiểm tra quyền truy cập workspace
     const boards = await prisma.board.findMany({ 
-        where: { workspaceId: id },
+        where: { workspaceId: workspaceId },
         orderBy: { createdAt: 'asc' }
     });
     res.json({ boards });

@@ -54,6 +54,7 @@ function getDigestEmailTemplate(userName, notifications) {
  * @returns {boolean}
  */
 function isTimeToSend(frequency, lastSentAt, now) {
+  console.log(`[Digest Worker - isTimeToSend] Checking for frequency: ${frequency}, lastSentAt: ${lastSentAt}, now: ${now}`);
   if (!lastSentAt) {
     return true; // Send immediately if it's the first time.
   }

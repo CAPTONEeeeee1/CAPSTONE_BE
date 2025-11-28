@@ -50,9 +50,28 @@ const getNotificationSettings = async (userId) => {
  */
 const updateNotificationSettings = async (userId, data) => {
   console.log(`[Settings Update] User ID: ${userId}, Data:`, JSON.stringify(data, null, 2));
+
+  const currentSettings = await prisma.notificationSetting.findUnique({
+    where: { userId },
+    select: { emailDigestEnabled: true, emailDigestFrequency: true },
+  });
+
+  const updateData = { ...data };
+
+  // If email digest is being enabled or frequency changed from NEVER, reset lastDigestSentAt
+  if (currentSettings) {
+    const wasDigestDisabled = currentSettings.emailDigestEnabled === false && data.emailDigestEnabled === true;
+    const wasFrequencyNever = currentSettings.emailDigestFrequency === 'NEVER' && data.emailDigestFrequency && data.emailDigestFrequency !== 'NEVER';
+
+    if (wasDigestDisabled || wasFrequencyNever) {
+      updateData.lastDigestSentAt = null;
+      console.log(`[Settings Update] Resetting lastDigestSentAt for user ${userId} due to digest setting change.`);
+    }
+  }
+
   const settings = await prisma.notificationSetting.update({
     where: { userId },
-    data,
+    data: updateData,
   });
   return settings;
 };

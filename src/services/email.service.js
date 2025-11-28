@@ -156,8 +156,135 @@ function getInvitationResponseEmailTemplate(workspace, responderName, accepted) 
 }
 
 /**
- * Template Email: Mã xác minh OTP
+ * Template Email: Workspace đã bị xóa
  */
+function getWorkspaceDeletedEmailTemplate(workspaceName, deleterName) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+                .alert-box { background: #f8d7da; color: #721c24; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }
+                .footer { margin-top: 20px; font-size: 12px; color: #777; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>🗑️ Workspace đã bị xóa</h2>
+                <div class="alert-box">
+                    <p>Workspace <strong>"${workspaceName}"</strong> mà bạn là thành viên đã bị xóa bởi <strong>${deleterName}</strong>.</p>
+                </div>
+                <p>Mọi dữ liệu liên quan đến workspace này đã không còn khả dụng.</p>
+                <div class="footer">
+                    <p>Email này được gửi từ PlanNex.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+/**
+ * Template Email: Board mới được tạo
+ */
+function getBoardCreatedEmailTemplate(boardName, creatorName, workspaceName, boardUrl) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+                .info-box { background: #e7f3ff; color: #0056b3; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; }
+                .button { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+                .button:hover { background: #0056b3; }
+                .footer { margin-top: 20px; font-size: 12px; color: #777; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>✨ Board mới được tạo!</h2>
+                <div class="info-box">
+                    <p><strong>${creatorName}</strong> đã tạo board <strong>"${boardName}"</strong> trong workspace <strong>"${workspaceName}"</strong>.</p>
+                </div>
+                <p>Hãy cùng khám phá board mới này và bắt đầu sắp xếp công việc!</p>
+                <a href="${boardUrl}" class="button">Xem Board</a>
+                <div class="footer">
+                    <p>Email này được gửi từ PlanNex.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+/**
+ * Template Email: Board mới được tạo
+ */
+function getBoardCreatedEmailTemplate(boardName, creatorName, workspaceName, boardUrl) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+                .info-box { background: #e7f3ff; color: #0056b3; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; }
+                .button { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+                .button:hover { background: #0056b3; }
+                .footer { margin-top: 20px; font-size: 12px; color: #777; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>✨ Board mới được tạo!</h2>
+                <div class="info-box">
+                    <p><strong>${creatorName}</strong> đã tạo board <strong>"${boardName}"</strong> trong workspace <strong>"${workspaceName}"</strong>.</p>
+                </div>
+                <p>Hãy cùng khám phá board mới này và bắt đầu sắp xếp công việc!</p>
+                <a href="${boardUrl}" class="button">Xem Board</a>
+                <div class="footer">
+                    <p>Email này được gửi từ PlanNex.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+/**
+ * Template Email: Board đã bị xóa
+ */
+function getBoardDeletedEmailTemplate(boardName, deleterName, workspaceName) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+                .alert-box { background: #f8d7da; color: #721c24; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }
+                .footer { margin-top: 20px; font-size: 12px; color: #777; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>🗑️ Board đã bị xóa</h2>
+                <div class="alert-box">
+                    <p>Board <strong>"${boardName}"</strong> trong workspace <strong>"${workspaceName}"</strong> đã bị xóa bởi <strong>${deleterName}</strong>.</p>
+                </div>
+                <p>Mọi dữ liệu liên quan đến board này đã không còn khả dụng.</p>
+                <div class="footer">
+                    <p>Email này được gửi từ PlanNex.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
 function getOTPEmailTemplate(fullName, otp) {
     return `
         <!DOCTYPE html>
@@ -288,5 +415,8 @@ module.exports = {
     getTaskAssignedEmailTemplate,
     getInvitationResponseEmailTemplate,
     getOTPEmailTemplate,
-    getPasswordResetCodeEmailTemplate
+    getPasswordResetCodeEmailTemplate,
+    getWorkspaceDeletedEmailTemplate,
+    getBoardCreatedEmailTemplate,
+    getBoardDeletedEmailTemplate
 };

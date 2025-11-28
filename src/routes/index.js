@@ -17,6 +17,7 @@ const notificationRoutes = require('./notification.route');
 const adminRoutes = require('./admin.route');
 const reportRoutes = require('./report.route');
 const activityRoutes = require('./activity.route');
+const settingRoutes = require('./setting.route');
 
 // --- Authentication & User Management ---
 router.use('/auth', authRoutes);
@@ -34,6 +35,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/admin', adminRoutes);
 router.use('/reports', reportRoutes);
 router.use('/activities', activityRoutes);
+router.use('/settings', settingRoutes);
 
 // --- 404 handler (Express 5 compatible) ---
 router.use((req, res) => {

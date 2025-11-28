@@ -5,10 +5,12 @@ const {
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    getNotificationSettings,
-    updateNotificationSettings,
     getUnreadCount
 } = require('../controllers/notification.controller');
+const {
+    getNotificationSettings,
+    updateNotificationSettings
+} = require('../controllers/setting.controller');
 
 const router = express.Router();
 

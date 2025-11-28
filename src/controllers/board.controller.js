@@ -1,6 +1,7 @@
 const { prisma } = require('../shared/prisma');
 // Sử dụng tất cả các validators cần thiết
 const { createBoardSchema, renameBoardSchema } = require('../validators/board.validators'); 
+const { sendBoardCreatedNotification, sendBoardDeletedNotification } = require('../services/notification.service');
 
 // --- HÀM HỖ TRỢ (Nếu cần, nhưng đã được tích hợp trong getBoard/deleteBoard) ---
 
@@ -15,6 +16,18 @@ async function createBoard(req, res) {
     // Yêu cầu quyền owner hoặc admin để tạo boards (từ >>>>>>> main)
     if (!['owner', 'admin'].includes(m.role)) {
         return res.status(403).json({ error: 'Only workspace owner and admin can create boards' });
+    }
+
+    // Kiểm tra tên board trùng lặp trong cùng workspace
+    const existingBoard = await prisma.board.findFirst({
+        where: {
+            workspaceId: workspaceId,
+            name: name,
+        }
+    });
+
+    if (existingBoard) {
+        return res.status(400).json({ error: 'Board với tên này đã tồn tại trong workspace.' });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -34,7 +47,35 @@ async function createBoard(req, res) {
         return { b, lists: [l1, l2, l3] };
     });
 
-    return res.status(201).json({ board: result.b, lists: result.lists });
+    // --- NEW NOTIFICATION LOGIC ---
+    const board = result.b;
+    const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
+    const creator = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+    if (workspace && creator) {
+        const members = await prisma.workspaceMember.findMany({
+            where: { workspaceId: board.workspaceId },
+        });
+
+        const boardUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/workspaces/${workspace.id}/boards/${board.id}`;
+
+        for (const member of members) {
+            // Do not send to the creator
+            if (member.userId !== req.user.id) {
+                await sendBoardCreatedNotification({
+                    creatorId: req.user.id,
+                    memberId: member.userId,
+                    boardName: board.name,
+                    workspaceName: workspace.name,
+                    boardUrl: boardUrl,
+                    creatorName: creator.fullName
+                });
+            }
+        }
+    }
+    // --- END NEW NOTIFICATION LOGIC ---
+
+    return res.status(201).json({ board: board, lists: result.lists });
 }
 
 // --- LẤY DANH SÁCH BOARDS CỦA WORKSPACE (Từ >>>>>>> main) ---
@@ -139,6 +180,30 @@ async function deleteBoard(req, res) {
     await prisma.board.delete({
         where: { id: boardId }
     });
+
+    // --- NEW NOTIFICATION LOGIC ---
+    const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
+    const deleter = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+    if (workspace && deleter) {
+        const members = await prisma.workspaceMember.findMany({
+            where: { workspaceId: board.workspaceId },
+        });
+
+        for (const member of members) {
+            // Do not send to the deleter
+            if (member.userId !== req.user.id) {
+                await sendBoardDeletedNotification({
+                    deleterId: req.user.id,
+                    memberId: member.userId,
+                    boardName: board.name,
+                    workspaceName: workspace.name,
+                    deleterName: deleter.fullName
+                });
+            }
+        }
+    }
+    // --- END NEW NOTIFICATION LOGIC ---
 
     return res.json({ message: 'Board deleted successfully' });
 }

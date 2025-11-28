@@ -1,3 +1,4 @@
+// Trigger regeneration
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -336,6 +337,7 @@ model Notification {
   isRead         Boolean   @default(false)
   readAt         DateTime?
   createdAt      DateTime  @default(now())
+  emailedAt      DateTime?
 
   sender   User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
   receiver User  @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
@@ -346,14 +348,31 @@ model Notification {
 
 // Cài đặt Thông báo (Từ Code 2)
 model NotificationSetting {
-  id                        String  @id @default(cuid())
-  userId                    String  @unique
-  emailNotifications        Boolean @default(true)
-  taskAssignedEmail         Boolean @default(true)
-  workspaceInviteEmail      Boolean @default(true)
-  invitationResponseEmail   Boolean @default(true)
+  id                        String                @id @default(cuid())
+  userId                    String                @unique
+  emailNotifications        Boolean               @default(true)
+  workspaceCreated          Boolean               @default(true)
+  workspaceInvitations      Boolean               @default(true)
+  workspaceInvitationResponse Boolean             @default(true)
+  boardCreated              Boolean               @default(true)
+  boardDeleted              Boolean               @default(true)
+  taskAssigned              Boolean               @default(true)
+  inAppGroupingEnabled      Boolean               @default(true)
+  emailDigestEnabled        Boolean               @default(true)
+  emailDigestFrequency      EmailDigestFrequency  @default(DAILY)
+  lastDigestSentAt          DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum EmailDigestFrequency {
+  HOURLY
+
+  DAILY
+
+  WEEKLY
+  
+  NEVER
 }
 
 // Bảng Xác minh Email (Từ Code 2 - cho flow nâng cao)

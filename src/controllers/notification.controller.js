@@ -93,44 +93,6 @@ async function deleteNotification(req, res) {
     res.json({ success: true });
 }
 
-async function getNotificationSettings(req, res) {
-    let settings = await prisma.notificationSetting.findUnique({
-        where: { userId: req.user.id }
-    });
-
-    if (!settings) {
-        settings = await prisma.notificationSetting.create({
-            data: { userId: req.user.id }
-        });
-    }
-
-    res.json({ settings });
-}
-
-async function updateNotificationSettings(req, res) {
-    const parsed = updateNotificationSettingsSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    
-    const { emailNotifications, taskAssignedEmail, workspaceInviteEmail, invitationResponseEmail } = parsed.data;
-
-    const updateData = {};
-    if (emailNotifications !== undefined) updateData.emailNotifications = emailNotifications;
-    if (taskAssignedEmail !== undefined) updateData.taskAssignedEmail = taskAssignedEmail;
-    if (workspaceInviteEmail !== undefined) updateData.workspaceInviteEmail = workspaceInviteEmail;
-    if (invitationResponseEmail !== undefined) updateData.invitationResponseEmail = invitationResponseEmail;
-
-    const settings = await prisma.notificationSetting.upsert({
-        where: { userId: req.user.id },
-        update: updateData,
-        create: {
-            userId: req.user.id,
-            ...updateData
-        }
-    });
-
-    res.json({ settings });
-}
-
 async function getUnreadCount(req, res) {
     const count = await prisma.notification.count({
         where: { receiverId: req.user.id, isRead: false }
@@ -144,7 +106,5 @@ module.exports = {
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    getNotificationSettings,
-    updateNotificationSettings,
     getUnreadCount
 };
