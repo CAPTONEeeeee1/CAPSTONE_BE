@@ -29,7 +29,7 @@ async function createWorkspace(req, res) {
     const clientInfo = getClientInfo(req);
     logActivity({
         userId: req.user.id,
-        action: 'workspace_created',
+        action: 'đã tạo workspace',
         entityType: 'workspace',
         entityId: ws.id,
         entityName: ws.name,

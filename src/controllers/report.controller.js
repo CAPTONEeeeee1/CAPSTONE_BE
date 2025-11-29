@@ -222,9 +222,7 @@ async function getWorkspaceActivityTimeline(req, res) {
 }
 
 async function getGlobalReport(req, res) {
-    console.log("--- EXECUTING getGlobalReport ---", new Date());
     const userId = req.user.id;
-    console.log("User ID:", userId);
 
     const userWorkspaces = await prisma.workspaceMember.findMany({
         where: { userId },
@@ -232,11 +230,9 @@ async function getGlobalReport(req, res) {
     });
 
     const workspaceIds = userWorkspaces.map(w => w.workspaceId);
-    console.log("Found workspace IDs:", workspaceIds);
 
 
     if (workspaceIds.length === 0) {
-        console.log("User is not a member of any workspace. Returning empty report.");
         return res.json({
             summary: {
                 totalCards: 0,
@@ -259,7 +255,6 @@ async function getGlobalReport(req, res) {
         select: { id: true }
     });
     const boardIds = boardsInWorkspaces.map(b => b.id);
-    console.log("Found board IDs in user's workspaces:", boardIds);
 
 
     const cardsInBoards = await prisma.card.findMany({
@@ -267,7 +262,6 @@ async function getGlobalReport(req, res) {
         select: { id: true }
     });
     const cardIds = cardsInBoards.map(c => c.id);
-    console.log("Found card IDs in user's boards:", cardIds);
 
 
     const [
@@ -319,46 +313,62 @@ async function getGlobalReport(req, res) {
         inProgressCards,
         totalMembers
     };
-    console.log("Calculated Summary:", summary);
-    console.log("Raw Recent Activities (count):", recentActivities.length);
 
 
     const populatedActivities = await Promise.all(recentActivities.map(async (activity) => {
         let workspace = null;
+        let board = null;
         if (activity.entityType === 'workspace') {
             workspace = await prisma.workspace.findUnique({
                 where: { id: activity.entityId },
                 select: { id: true, name: true }
             });
         } else if (activity.entityType === 'board') {
-            const board = await prisma.board.findUnique({
+            const boardData = await prisma.board.findUnique({
                 where: { id: activity.entityId },
-                select: { workspace: { select: { id: true, name: true } } }
+                select: { id: true, name: true, workspace: { select: { id: true, name: true } } }
             });
-            workspace = board?.workspace;
+            if (boardData) {
+                board = { id: boardData.id, name: boardData.name };
+                workspace = boardData.workspace;
+            }
         } else if (activity.entityType === 'card') {
             const card = await prisma.card.findUnique({
                 where: { id: activity.entityId },
-                select: { board: { select: { workspace: { select: { id: true, name: true } } } } }
+                select: {
+                    board: {
+                        select: {
+                            id: true,
+                            name: true,
+                            workspace: {
+                                select: {
+                                    id: true,
+                                    name: true
+                                }
+                            }
+                        }
+                    }
+                }
             });
-            workspace = card?.board?.workspace;
+            if (card && card.board) {
+                board = { id: card.board.id, name: card.board.name };
+                workspace = card.board.workspace;
+            }
         }
 
         return {
             ...activity,
             details: activity.entityName,
-            workspace
+            workspace,
+            board,
         };
     }));
-
-    console.log("Populated Activities (count):", populatedActivities.length);
 
     const finalResponse = {
         summary,
         recentActivities: populatedActivities
     };
 
-    console.log("--- FINISHED getGlobalReport ---");
     res.json(finalResponse);
 }
 

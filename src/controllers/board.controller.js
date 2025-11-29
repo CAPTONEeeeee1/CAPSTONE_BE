@@ -2,6 +2,7 @@ const { prisma } = require('../shared/prisma');
 // Sử dụng tất cả các validators cần thiết
 const { createBoardSchema, renameBoardSchema } = require('../validators/board.validators'); 
 const { sendBoardCreatedNotification, sendBoardDeletedNotification } = require('../services/notification.service');
+const { logActivity, getClientInfo } = require('../services/activity.service');
 
 // --- HÀM HỖ TRỢ (Nếu cần, nhưng đã được tích hợp trong getBoard/deleteBoard) ---
 
@@ -45,6 +46,17 @@ async function createBoard(req, res) {
         const l3 = await tx.List.create({ data: { boardId: b.id, name: 'Done', orderIdx: 2, isDone: true } });
 
         return { b, lists: [l1, l2, l3] };
+    });
+
+    const clientInfo = getClientInfo(req);
+    logActivity({
+        userId: req.user.id,
+        action: 'đã tạo bảng',
+        entityType: 'board',
+        entityId: result.b.id,
+        entityName: result.b.name,
+        metadata: { workspaceId: result.b.workspaceId },
+        ...clientInfo
     });
 
     // --- NEW NOTIFICATION LOGIC ---
