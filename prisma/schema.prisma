@@ -361,6 +361,7 @@ model NotificationSetting {
   emailDigestEnabled        Boolean               @default(true)
   emailDigestFrequency      EmailDigestFrequency  @default(DAILY)
   lastDigestSentAt          DateTime?
+  theme                     String                @default("light")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
