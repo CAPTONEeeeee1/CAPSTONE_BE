@@ -2,22 +2,22 @@ const { prisma } = require('../shared/prisma');
 // Hợp nhất tất cả các validators
 const { createListSchema, getBoardListsSchema, updateListSchema, deleteListSchema, reorderListsSchema } = require('../validators/list.validators');
 // Thêm Activity Log service
-const { logActivity } = require('../services/activity.service'); 
+const { logActivity } = require('../services/activity.service');
 
 /**
  * Hàm hỗ trợ kiểm tra quyền truy cập Workspace (Từ Code 2)
  */
 async function checkWorkspaceAccess(boardId, userId) {
-    const board = await prisma.board.findUnique({ 
+    const board = await prisma.board.findUnique({
         where: { id: boardId },
         select: { id: true, name: true, workspaceId: true }
     });
     if (!board) return { board: null, workspaceMember: null };
 
-    const workspaceMember = await prisma.workspaceMember.findFirst({ 
-        where: { workspaceId: board.workspaceId, userId } 
+    const workspaceMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: board.workspaceId, userId }
     });
-    
+
     return { board, workspaceMember };
 }
 
@@ -40,14 +40,14 @@ async function createList(req, res) {
         return res.status(403).json({ error: 'Bạn không phải thành viên của workspace' });
     }
 
-    const max = await prisma.list.aggregate({ 
-        where: { boardId }, 
-        _max: { orderIdx: true } 
+    const max = await prisma.list.aggregate({
+        where: { boardId },
+        _max: { orderIdx: true }
     });
     const orderIdx = (max._max.orderIdx ?? -1) + 1;
-    
-    const list = await prisma.list.create({ 
-        data: { boardId, name, orderIdx } 
+
+    const list = await prisma.list.create({
+        data: { boardId, name, orderIdx }
     });
 
     // Log activity (Từ Code 2)
@@ -55,11 +55,11 @@ async function createList(req, res) {
         action: 'list_create',
         entityType: 'list',
         entityId: list.id,
-        metadata: { 
-            listName: name, 
-            boardId, 
+        metadata: {
+            listName: name,
+            boardId,
             boardName: board.name,
-            workspaceId: board.workspaceId 
+            workspaceId: board.workspaceId
         }
     });
 
@@ -102,13 +102,13 @@ async function getBoardLists(req, res) {
 
 async function updateList(req, res) {
     // Dùng validator chi tiết từ Code 2
-    const parsed = updateListSchema.safeParse({ ...req.params, ...req.body }); 
+    const parsed = updateListSchema.safeParse({ ...req.params, ...req.body });
     if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
     }
     const { listId, name, orderIdx, isDone } = parsed.data;
 
-    const list = await prisma.list.findUnique({ 
+    const list = await prisma.list.findUnique({
         where: { id: listId },
         // Lấy thông tin board để kiểm tra quyền và log activity (Từ Code 2)
         include: { board: { select: { id: true, name: true, workspaceId: true } } }
@@ -128,9 +128,9 @@ async function updateList(req, res) {
     if (orderIdx !== undefined) updateData.orderIdx = orderIdx;
     if (isDone !== undefined) updateData.isDone = isDone;
 
-    const updated = await prisma.list.update({ 
-        where: { id: listId }, 
-        data: updateData 
+    const updated = await prisma.list.update({
+        where: { id: listId },
+        data: updateData
     });
 
     // Log activity (Từ Code 2)
@@ -144,12 +144,12 @@ async function updateList(req, res) {
             action: 'list_update',
             entityType: 'list',
             entityId: listId,
-            metadata: { 
+            metadata: {
                 listName: updated.name,
                 boardId: list.boardId,
                 boardName: list.board.name,
                 workspaceId: list.board.workspaceId,
-                changes 
+                changes
             }
         });
     }
@@ -168,10 +168,10 @@ async function deleteList(req, res) {
     }
     const { listId, moveToListId } = parsed.data;
 
-    const list = await prisma.list.findUnique({ 
+    const list = await prisma.list.findUnique({
         where: { id: listId },
         // Include board info và count cards (Từ Code 2)
-        include: { 
+        include: {
             board: { select: { id: true, name: true, workspaceId: true } },
             _count: { select: { cards: true } }
         }
@@ -189,7 +189,7 @@ async function deleteList(req, res) {
     // Xử lý khi List còn thẻ (Logic quan trọng từ Code 2)
     if (list._count.cards > 0) {
         if (!moveToListId) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'Không thể xóa danh sách có thẻ. Vui lòng cung cấp danh sách đích để chuyển các thẻ trước.',
                 cardCount: list._count.cards,
                 suggestion: 'Thêm ?moveToListId=<target-list-id> để chuyển các thẻ trước khi xóa'
@@ -221,7 +221,7 @@ async function deleteList(req, res) {
             for (let i = 0; i < cards.length; i++) {
                 await tx.card.update({
                     where: { id: cards[i].id },
-                    data: { 
+                    data: {
                         listId: moveToListId,
                         orderIdx: startOrderIdx + i
                     }
@@ -232,12 +232,11 @@ async function deleteList(req, res) {
             await tx.list.delete({ where: { id: listId } });
         });
 
-        // Log activity (Từ Code 2)
         logActivity(req, {
             action: 'list_delete_with_move',
             entityType: 'list',
             entityId: listId,
-            metadata: { 
+            metadata: {
                 listName: list.name,
                 boardId: list.boardId,
                 boardName: list.board.name,
@@ -247,9 +246,9 @@ async function deleteList(req, res) {
             }
         });
 
-        return res.json({ 
-            success: true, 
-            message: `Danh sách đã được xóa và ${list._count.cards} thẻ đã được chuyển sang danh sách đích` 
+        return res.json({
+            success: true,
+            message: `Danh sách đã được xóa và ${list._count.cards} thẻ đã được chuyển sang danh sách đích`
         });
     }
 
@@ -261,7 +260,7 @@ async function deleteList(req, res) {
         action: 'list_delete',
         entityType: 'list',
         entityId: listId,
-        metadata: { 
+        metadata: {
             listName: list.name,
             boardId: list.boardId,
             boardName: list.board.name,
@@ -272,8 +271,6 @@ async function deleteList(req, res) {
     res.json({ success: true, message: 'Danh sách đã được xóa thành công' });
 }
 
-
-// --- REORDER LISTS ---
 
 async function reorderLists(req, res) {
     const parsed = reorderListsSchema.safeParse(req.body);
@@ -290,12 +287,11 @@ async function reorderLists(req, res) {
         return res.status(403).json({ error: 'Bạn không phải thành viên của workspace' });
     }
 
-    // Thêm các bước kiểm tra và chuẩn hóa thứ tự (Logic quan trọng từ Code 2)
     const listIds = orders.map(o => o.id);
     const lists = await prisma.list.findMany({
         where: { id: { in: listIds }, boardId }
     });
-    
+
     if (lists.length !== listIds.length) {
         return res.status(400).json({ error: 'Một số danh sách không thuộc bảng này' });
     }
@@ -306,27 +302,37 @@ async function reorderLists(req, res) {
         return res.status(400).json({ error: 'Không cho phép trùng chỉ số thứ tự' });
     }
 
-    // Normalize indexes to start from 0 and be sequential
     const sortedOrders = [...orders].sort((a, b) => a.orderIdx - b.orderIdx);
     const normalizedOrders = sortedOrders.map((order, index) => ({
         id: order.id,
-        orderIdx: index // Gán lại thứ tự từ 0
+        orderIdx: index
     }));
 
-    // Thực hiện cập nhật trong transaction
-    await prisma.$transaction(
-        normalizedOrders.map(o => prisma.list.update({ 
-            where: { id: o.id }, 
-            data: { orderIdx: o.orderIdx } 
-        }))
-    );
+    // Use two-phase update to avoid unique constraint conflicts
+    await prisma.$transaction(async (tx) => {
+        // Phase 1: Set all to temporary negative values
+        for (let i = 0; i < normalizedOrders.length; i++) {
+            await tx.list.update({
+                where: { id: normalizedOrders[i].id },
+                data: { orderIdx: -1000 - i }
+            });
+        }
+
+        // Phase 2: Set to final values
+        for (let i = 0; i < normalizedOrders.length; i++) {
+            await tx.list.update({
+                where: { id: normalizedOrders[i].id },
+                data: { orderIdx: normalizedOrders[i].orderIdx }
+            });
+        }
+    });
 
     // Log activity (Từ Code 2)
     logActivity(req, {
         action: 'list_reorder',
         entityType: 'board',
         entityId: boardId,
-        metadata: { 
+        metadata: {
             boardName: board.name,
             workspaceId: board.workspaceId,
             listCount: normalizedOrders.length

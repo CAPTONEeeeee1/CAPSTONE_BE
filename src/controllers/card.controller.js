@@ -201,7 +201,7 @@ async function createCard(req, res) {
     const clientInfo = getClientInfo(req);
     logActivity({
         userId: req.user.id,
-        action: 'tạo thẻ',
+        action: 'card_created',
         entityType: 'card',
         entityId: card.id,
         entityName: card.title,

@@ -1,93 +1,111 @@
 const { prisma } = require('../shared/prisma');
 // Sử dụng tất cả các validators cần thiết
-const { createBoardSchema, renameBoardSchema } = require('../validators/board.validators'); 
+const { createBoardSchema, renameBoardSchema } = require('../validators/board.validators');
 const { sendBoardCreatedNotification, sendBoardDeletedNotification } = require('../services/notification.service');
-const { logActivity, getClientInfo } = require('../services/activity.service');
 
 // --- HÀM HỖ TRỢ (Nếu cần, nhưng đã được tích hợp trong getBoard/deleteBoard) ---
 
 async function createBoard(req, res) {
-    const parsed = createBoardSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { workspaceId, name, mode, keySlug } = parsed.data;
-
-    const m = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: req.user.id } });
-    if (!m) return res.status(403).json({ error: 'Not in workspace' });
-
-    // Yêu cầu quyền owner hoặc admin để tạo boards (từ >>>>>>> main)
-    if (!['owner', 'admin'].includes(m.role)) {
-        return res.status(403).json({ error: 'Only workspace owner and admin can create boards' });
-    }
-
-    // Kiểm tra tên board trùng lặp trong cùng workspace
-    const existingBoard = await prisma.board.findFirst({
-        where: {
-            workspaceId: workspaceId,
-            name: name,
+    try {
+        const parsed = createBoardSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({ error: parsed.error.flatten() });
         }
-    });
+        const { workspaceId, name, mode, keySlug, lists } = parsed.data;
 
-    if (existingBoard) {
-        return res.status(400).json({ error: 'Board với tên này đã tồn tại trong workspace.' });
-    }
+        const m = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: req.user.id } });
+        if (!m) return res.status(403).json({ error: 'Not in workspace' });
 
-    const result = await prisma.$transaction(async (tx) => {
-        const b = await tx.board.create({
-            data: { workspaceId, name, mode, keySlug, createdById: req.user.id }
+        // Yêu cầu quyền owner hoặc admin để tạo boards (từ >>>>>>> main)
+        if (!['owner', 'admin'].includes(m.role)) {
+            return res.status(403).json({ error: 'Only workspace owner and admin can create boards' });
+        }
+
+        // Kiểm tra tên board trùng lặp trong cùng workspace
+        const existingBoard = await prisma.board.findFirst({
+            where: {
+                workspaceId: workspaceId,
+                name: name,
+            }
         });
 
-        // SỬA LỖI: Không có model `BoardMember`, quyền truy cập board được quản lý qua `WorkspaceMember`.
-        // Logic tạo thành viên cho board đã bị loại bỏ vì không có model tương ứng.
-        // Quyền truy cập board sẽ được kiểm tra thông qua quyền thành viên trong workspace.
+        if (existingBoard) {
+            return res.status(400).json({ error: 'Board với tên này đã tồn tại trong workspace.' });
+        }
 
-        // Tạo 3 lists mặc định
-        const l1 = await tx.List.create({ data: { boardId: b.id, name: 'Todo', orderIdx: 0 } });
-        const l2 = await tx.List.create({ data: { boardId: b.id, name: 'In Progress', orderIdx: 1 } });
-        const l3 = await tx.List.create({ data: { boardId: b.id, name: 'Done', orderIdx: 2, isDone: true } });
+        const result = await prisma.$transaction(async (tx) => {
+            const b = await tx.board.create({
+                data: { workspaceId, name, mode, keySlug, createdById: req.user.id }
+            });
 
-        return { b, lists: [l1, l2, l3] };
-    });
+            // SỬA LỖI: Không có model `BoardMember`, quyền truy cập board được quản lý qua `WorkspaceMember`.
+            // Logic tạo thành viên cho board đã bị loại bỏ vì không có model tương ứng.
+            // Quyền truy cập board sẽ được kiểm tra thông qua quyền thành viên trong workspace.
 
-    const clientInfo = getClientInfo(req);
-    logActivity({
-        userId: req.user.id,
-        action: 'đã tạo bảng',
-        entityType: 'board',
-        entityId: result.b.id,
-        entityName: result.b.name,
-        metadata: { workspaceId: result.b.workspaceId },
-        ...clientInfo
-    });
+            // Tạo lists từ danh sách tùy chỉnh hoặc dùng 3 lists mặc định
+            let createdLists = [];
+            if (lists && lists.length > 0) {
+                // Tạo lists từ danh sách được cung cấp
+                for (let i = 0; i < lists.length; i++) {
+                    const list = lists[i];
+                    const l = await tx.list.create({
+                        data: {
+                            boardId: b.id,
+                            name: list.name,
+                            orderIdx: list.orderIdx !== undefined ? list.orderIdx : i,
+                            isDone: list.isDone || false
+                        }
+                    });
+                    createdLists.push(l);
+                }
+            } else {
+                // Tạo 3 lists mặc định
+                const l1 = await tx.list.create({ data: { boardId: b.id, name: 'Todo', orderIdx: 0 } });
+                const l2 = await tx.list.create({ data: { boardId: b.id, name: 'In Progress', orderIdx: 1 } });
+                const l3 = await tx.list.create({ data: { boardId: b.id, name: 'Done', orderIdx: 2, isDone: true } });
+                createdLists = [l1, l2, l3];
+            }
 
-    // --- NEW NOTIFICATION LOGIC ---
-    const board = result.b;
-    const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
-    const creator = await prisma.user.findUnique({ where: { id: req.user.id } });
-
-    if (workspace && creator) {
-        const members = await prisma.workspaceMember.findMany({
-            where: { workspaceId: board.workspaceId },
+            return { b, lists: createdLists };
         });
 
-        const boardUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/workspaces/${workspace.id}/boards/${board.id}`;
+        // --- NEW NOTIFICATION LOGIC ---
+        const board = result.b;
+        const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
+        const creator = await prisma.user.findUnique({ where: { id: req.user.id } });
 
-        for (const member of members) {
-            // Do not send to the creator
-            if (member.userId !== req.user.id) {
-                await sendBoardCreatedNotification({
-                    creatorId: req.user.id,
-                    memberId: member.userId,
-                    boardName: board.name,
-                    workspaceName: workspace.name,
-                    boardUrl: boardUrl,
-                    creatorName: creator.fullName
-                });
+        if (workspace && creator) {
+            const members = await prisma.workspaceMember.findMany({
+                where: { workspaceId: board.workspaceId },
+            });
+
+            const boardUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/workspaces/${workspace.id}/boards/${board.id}`;
+
+            for (const member of members) {
+                // Do not send to the creator
+                if (member.userId !== req.user.id) {
+                    await sendBoardCreatedNotification({
+                        creatorId: req.user.id,
+                        memberId: member.userId,
+                        boardName: board.name,
+                        workspaceName: workspace.name,
+                        boardUrl: boardUrl,
+                        creatorName: creator.fullName
+                    });
+                }
             }
         }
-    }
-    // --- END NEW NOTIFICATION LOGIC ---
+        // --- END NEW NOTIFICATION LOGIC ---
 
-    return res.status(201).json({ board: board, lists: result.lists });
+        return res.status(201).json({ board: board, lists: result.lists });
+    } catch (error) {
+        console.error('Error creating board:', error);
+        return res.status(500).json({
+            error: 'Failed to create board',
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
 }
 
 // --- LẤY DANH SÁCH BOARDS CỦA WORKSPACE (Từ >>>>>>> main) ---
@@ -229,8 +247,8 @@ async function togglePinBoard(req, res) {
     const board = await prisma.board.findUnique({ where: { id: boardId } });
     if (!board) return res.status(404).json({ error: 'Board not found' });
 
-    const workspaceMember = await prisma.workspaceMember.findFirst({ 
-        where: { workspaceId: board.workspaceId, userId: req.user.id } 
+    const workspaceMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: board.workspaceId, userId: req.user.id }
     });
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
