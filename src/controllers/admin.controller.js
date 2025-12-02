@@ -214,42 +214,6 @@ async function deleteUser(req, res) {
   }
 }
 
-async function getSystemStats(req, res) {
-  const [
-    totalUsers,
-    activeUsers,
-    suspendedUsers,
-    totalWorkspaces,
-    totalBoards,
-    totalCards,
-    recentActivities,
-  ] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { status: 'active' } }),
-    prisma.user.count({ where: { status: "suspended" } }),
-    prisma.workspace.count(),
-    prisma.board.count(),
-    prisma.card.count(),
-    prisma.activityLog.findMany({
-      take: 10,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { id: true, email: true, fullName: true } },
-      },
-    }),
-  ]);
-
-  res.json({
-    stats: {
-      users: { total: totalUsers, active: activeUsers, suspended: suspendedUsers },
-      workspaces: totalWorkspaces,
-      boards: totalBoards,
-      cards: totalCards,
-    },
-    recentActivities,
-  });
-}
-
 module.exports = {
   getAllUsers,
   getUserDetail,
@@ -257,5 +221,4 @@ module.exports = {
   updateUserRole,
   updateUserInfo,
   deleteUser,
-  getSystemStats,
 };

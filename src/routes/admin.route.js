@@ -8,12 +8,9 @@ const {
   updateUserRole,
   updateUserInfo,
   deleteUser,
-  getSystemStats,
 } = require('../controllers/admin.controller');
 
 const router = express.Router();
-
-router.get('/stats', auth(), requireAdmin, getSystemStats);
 
 router.get('/users', auth(), requireAdmin, getAllUsers);
 router.get('/users/:userId', auth(), requireAdmin, getUserDetail);

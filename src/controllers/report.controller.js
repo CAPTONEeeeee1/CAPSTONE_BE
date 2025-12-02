@@ -221,7 +221,125 @@ async function getWorkspaceActivityTimeline(req, res) {
     res.json({ activities });
 }
 
+async function getGlobalReport(req, res) {
+  const [
+    totalUsers,
+    activeUsers,
+    suspendedUsers,
+    totalWorkspaces,
+    totalBoards,
+    totalCards,
+    recentActivities,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { status: 'active' } }),
+    prisma.user.count({ where: { status: "suspended" } }),
+    prisma.workspace.count(),
+    prisma.board.count(),
+    prisma.card.count(),
+    prisma.activityLog.findMany({
+      take: 10,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, email: true, fullName: true } },
+      },
+    }),
+  ]);
+
+  res.json({
+    stats: {
+      users: { total: totalUsers, active: activeUsers, suspended: suspendedUsers },
+      workspaces: totalWorkspaces,
+      boards: totalBoards,
+      cards: totalCards,
+    },
+    recentActivities,
+  });
+}
+
+async function getUserDashboardReport(req, res) {
+  const userId = req.user.id;
+
+  const workspaceFilter = {
+    OR: [
+      { ownerId: userId },
+      { members: { some: { userId } } },
+    ],
+  };
+
+  const [
+    totalBoards,
+    totalCards,
+    completedCards,
+    overdueCards,
+    inProgressCards,
+    totalMembers,
+    recentActivities,
+  ] = await Promise.all([
+    prisma.board.count({
+      where: { workspace: workspaceFilter },
+    }),
+    prisma.card.count({
+      where: { board: { workspace: workspaceFilter } },
+    }),
+    prisma.card.count({
+      where: {
+        list: { isDone: true },
+        board: { workspace: workspaceFilter },
+      },
+    }),
+    prisma.card.count({
+      where: {
+        dueDate: { lt: new Date() },
+        list: { isDone: false },
+        board: { workspace: workspaceFilter },
+      },
+    }),
+    prisma.card.count({
+      where: {
+        list: { isDone: false },
+        board: { workspace: workspaceFilter },
+      },
+    }),
+    prisma.workspaceMember.count({
+      where: {
+        workspace: {
+          OR: [
+            { ownerId: userId },
+            { members: { some: { userId } } },
+          ],
+        },
+      },
+    }),
+    prisma.activityLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: {
+        user: { select: { id: true, email: true, fullName: true, avatar: true } },
+      },
+    }),
+  ]);
+
+  const completionRate = totalCards > 0 ? ((completedCards / totalCards) * 100).toFixed(2) : 0;
+
+  res.json({
+    summary: {
+      totalBoards,
+      totalCards,
+      completedCards,
+      overdueCards,
+      inProgressCards,
+      totalMembers,
+      completionRate,
+    },
+    recentActivities,
+  });
+}
+
 module.exports = {
     getWorkspaceReport,
-    getWorkspaceActivityTimeline
+    getWorkspaceActivityTimeline,
+    getGlobalReport,
+    getUserDashboardReport
 };
