@@ -214,6 +214,57 @@ async function deleteUser(req, res) {
   }
 }
 
+async function getStats(req, res) {
+  try {
+    const [
+      totalUsers,
+      activeUsers,
+      suspendedUsers,
+      workspaces,
+      boards,
+      cards,
+      recentActivities,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { status: 'active' } }),
+      prisma.user.count({ where: { status: 'suspended' } }),
+      prisma.workspace.count(),
+      prisma.board.count(),
+      prisma.card.count(),
+      prisma.activityLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    res.json({
+      stats: {
+        users: {
+          total: totalUsers,
+          active: activeUsers,
+          suspended: suspendedUsers,
+        },
+        workspaces,
+        boards,
+        cards,
+      },
+      recentActivities,
+    });
+  } catch (err) {
+    console.error('Get admin stats error:', err);
+    res.status(500).json({ error: 'Could not fetch system statistics' });
+  }
+}
+
 module.exports = {
   getAllUsers,
   getUserDetail,
@@ -221,4 +272,5 @@ module.exports = {
   updateUserRole,
   updateUserInfo,
   deleteUser,
+  getStats,
 };
