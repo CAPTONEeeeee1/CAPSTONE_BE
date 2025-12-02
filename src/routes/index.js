@@ -11,6 +11,7 @@ const listRoutes = require('./list.route');
 const cardRoutes = require('./card.route');
 const labelRoutes = require('./label.route');
 const commentRoutes = require('./comment.route');
+const searchRoutes = require('./search.route');
 
 // --- System extensions & admin modules ---
 const notificationRoutes = require('./notification.route');
@@ -29,6 +30,7 @@ router.use('/lists', listRoutes);
 router.use('/cards', cardRoutes);
 router.use('/labels', labelRoutes);
 router.use('/comments', commentRoutes);
+router.use('/search', searchRoutes);
 
 // --- System & Administration ---
 router.use('/notifications', notificationRoutes);

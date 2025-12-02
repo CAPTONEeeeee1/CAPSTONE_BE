@@ -7,6 +7,11 @@ function runInBackground(asyncFn) {
 }
 
 async function logActivity({ userId, action, entityType = null, entityId = null, entityName = null, metadata = null, ipAddress = null, userAgent = null }) {
+    if (!userId || !action) {
+        console.warn('Invalid activity log attempt: userId or action is missing.');
+        return;
+    }
+
     runInBackground(async () => {
         await prisma.activityLog.create({
             data: {

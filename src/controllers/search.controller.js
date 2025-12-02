@@ -43,12 +43,9 @@ async function searchCards(req, res) {
         const params = [String(boardId)];
         let p = 2; // Bắt đầu từ tham số thứ 2 ($2)
 
-        let hasQuery = false;
         if (typeof q === 'string' && q.trim().length > 0) {
-            hasQuery = true;
             whereClauses.push(
-                // Sử dụng Full-Text Search cho title và description
-                `to_tsvector('simple', coalesce(c."title",'') || ' ' || coalesce(c."description",'')) @@ plainto_tsquery($${p})`
+                `(c."title" ILIKE '%' || $${p} || '%' OR c."description" ILIKE '%' || $${p} || '%')`
             );
             params.push(q.trim());
             p++;
@@ -96,20 +93,6 @@ async function searchCards(req, res) {
         if (!Number.isFinite(limit) || limit <= 0) limit = 100;
         if (limit > 200) limit = 200;
 
-        // Xử lý RANK và ORDER BY
-        let rankSelect = 'NULL::float AS rank';
-        let orderBy = 'c."updatedAt" DESC';
-        if (hasQuery) {
-            // Tìm index của tham số q trong mảng params
-            const qIdx = params.findIndex((v) => typeof v === 'string' && v === q.trim()) + 1;
-            
-            rankSelect = `ts_rank(
-                to_tsvector('simple', coalesce(c."title",'') || ' ' || coalesce(c."description",'')),
-                plainto_tsquery($${qIdx})
-            ) AS rank`;
-            orderBy = `rank DESC NULLS LAST, c."updatedAt" DESC`;
-        }
-
         // Xây dựng truy vấn SQL
         const sql = `
             SELECT
@@ -119,10 +102,10 @@ async function searchCards(req, res) {
                 c."listId",
                 c."orderIdx",
                 c."keySeq",
-                ${rankSelect}
+                NULL::float AS rank
             FROM "Card" c
             WHERE ${whereClauses.join(' AND ')}
-            ORDER BY ${orderBy}
+            ORDER BY c."updatedAt" DESC
             LIMIT ${limit};
         `;
 
@@ -135,4 +118,89 @@ async function searchCards(req, res) {
     }
 }
 
-module.exports = { searchCards };
+async function searchWorkspaces(req, res) {
+    try {
+        const { q, limit: limitRaw } = req.query;
+        const userId = req.user.id;
+
+        if (typeof q !== 'string' || q.trim().length === 0) {
+            return res.json({ results: [] });
+        }
+
+        const limit = Number(limitRaw || 10);
+        if (!Number.isFinite(limit) || limit <= 0) limit = 10;
+        if (limit > 50) limit = 50;
+        
+        const searchTerm = q.trim();
+
+        const workspaces = await prisma.workspace.findMany({
+            where: {
+                name: {
+                    contains: searchTerm,
+                    mode: 'insensitive',
+                },
+                members: {
+                    some: {
+                        userId: userId,
+                    },
+                },
+            },
+            take: limit,
+            select: {
+                id: true,
+                name: true,
+            },
+        });
+
+        return res.json({ results: workspaces });
+    } catch (err) {
+        console.error('searchWorkspaces error:', err);
+        return res.status(500).json({ error: 'Internal Server Error' });
+    }
+}
+
+async function searchBoards(req, res) {
+    try {
+        const { q, limit: limitRaw } = req.query;
+        const userId = req.user.id;
+
+        if (typeof q !== 'string' || q.trim().length === 0) {
+            return res.json({ results: [] });
+        }
+
+        const limit = Number(limitRaw || 10);
+        if (!Number.isFinite(limit) || limit <= 0) limit = 10;
+        if (limit > 50) limit = 50;
+        
+        const searchTerm = q.trim();
+
+        const boards = await prisma.board.findMany({
+            where: {
+                name: {
+                    contains: searchTerm,
+                    mode: 'insensitive',
+                },
+                workspace: {
+                    members: {
+                        some: {
+                            userId: userId,
+                        },
+                    },
+                },
+            },
+            take: limit,
+            select: {
+                id: true,
+                name: true,
+                workspaceId: true,
+            },
+        });
+
+        return res.json({ results: boards });
+    } catch (err) {
+        console.error('searchBoards error:', err);
+        return res.status(500).json({ error: 'Internal Server Error' });
+    }
+}
+
+module.exports = { searchCards, searchWorkspaces, searchBoards };

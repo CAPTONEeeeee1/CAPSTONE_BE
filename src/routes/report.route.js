@@ -5,11 +5,13 @@ const {
     getWorkspaceReport,
     getWorkspaceActivityTimeline,
     getGlobalReport,
-    getUserDashboardReport
+    getUserDashboardReport,
+    getReportsOverview
 } = require('../controllers/report.controller');
 
 const router = express.Router();
 
+router.get('/overview', auth(), getReportsOverview);
 router.get('/user', auth(), getUserDashboardReport);
 router.get('/global', auth(), requireAdmin, getGlobalReport);
 router.get('/workspaces/:workspaceId', auth(), getWorkspaceReport);

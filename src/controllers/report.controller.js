@@ -337,9 +337,135 @@ async function getUserDashboardReport(req, res) {
   });
 }
 
+async function getReportsOverview(req, res) {
+  const userId = req.user.id;
+
+  const workspaceFilter = {
+    OR: [
+      { ownerId: userId },
+      { members: { some: { userId } } },
+    ],
+  };
+
+  const userWorkspaces = await prisma.workspace.findMany({
+    where: workspaceFilter,
+    select: { id: true },
+  });
+  const workspaceIds = userWorkspaces.map(ws => ws.id);
+
+  const [
+    totalWorkspaces,
+    totalCards,
+    completedCards,
+    totalMembers,
+    recentActivities,
+    topPerformers,
+  ] = await Promise.all([
+    prisma.workspace.count({ where: workspaceFilter }),
+    prisma.card.count({ where: { board: { workspaceId: { in: workspaceIds } } } }),
+    prisma.card.count({
+      where: {
+        list: { isDone: true },
+        board: { workspaceId: { in: workspaceIds } },
+      },
+    }),
+    prisma.workspaceMember.count({ where: { workspaceId: { in: workspaceIds } } }),
+    prisma.activityLog.findMany({
+      where: {
+        user: {
+          workspaceMemberships: { some: { workspaceId: { in: workspaceIds } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: {
+        user: { select: { id: true, fullName: true, avatar: true } },
+      },
+    }),
+    prisma.card.groupBy({
+      by: ['createdById'],
+      where: {
+        board: { workspaceId: { in: workspaceIds } },
+        list: { isDone: true },
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: {
+        _count: {
+          id: 'desc',
+        },
+      },
+      take: 5,
+    }).then(async results => {
+      const userIds = results.map(r => r.createdById);
+      if (userIds.length === 0) return [];
+      const users = await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, fullName: true, avatar: true },
+      });
+      return results.map(r => {
+        const user = users.find(u => u.id === r.createdById);
+        return {
+          user,
+          tasksCompleted: r._count.id,
+        };
+      });
+    }),
+  ]);
+
+  const boardEntityIds = recentActivities
+    .filter(a => a.entityType === 'board')
+    .map(a => a.entityId);
+
+  const workspaceMap = {};
+
+  const workspaceEntityIds = recentActivities
+    .filter(a => a.entityType === 'workspace')
+    .map(a => a.entityId);
+
+  if (workspaceEntityIds.length > 0) {
+    const workspaces = await prisma.workspace.findMany({
+        where: { id: { in: workspaceEntityIds } },
+        select: { id: true, name: true }
+    });
+    workspaces.forEach(ws => {
+        workspaceMap[ws.id] = { id: ws.id, name: ws.name };
+    });
+  }
+
+  if (boardEntityIds.length > 0) {
+      const boards = await prisma.board.findMany({
+          where: { id: { in: boardEntityIds } },
+          include: { workspace: { select: { id: true, name: true } } }
+      });
+      boards.forEach(board => {
+          workspaceMap[board.id] = { id: board.workspace.id, name: board.workspace.name };
+      });
+  }
+
+  const enrichedActivities = recentActivities.map(activity => ({
+      ...activity,
+      workspace: workspaceMap[activity.entityId] || null,
+  }));
+
+  res.json({
+    overview: {
+      totalWorkspaces,
+      totalCards,
+      completedCards,
+      totalMembers,
+      completionRate: totalCards > 0 ? ((completedCards / totalCards) * 100).toFixed(0) : 0,
+    },
+    recentActivities: enrichedActivities,
+    topPerformers,
+  });
+}
+
 module.exports = {
     getWorkspaceReport,
     getWorkspaceActivityTimeline,
     getGlobalReport,
-    getUserDashboardReport
+    getUserDashboardReport,
+    getReportsOverview
 };
