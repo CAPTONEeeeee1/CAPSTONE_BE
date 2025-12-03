@@ -285,6 +285,37 @@ function getBoardDeletedEmailTemplate(boardName, deleterName, workspaceName) {
     `;
 }
 
+/**
+ * Template Email: Bị xóa khỏi Workspace
+ */
+function getMemberRemovedEmailTemplate(workspaceName, removerName) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+                .alert-box { background: #f8d7da; color: #721c24; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }
+                .footer { margin-top: 20px; font-size: 12px; color: #777; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>🗑️ Bạn đã bị xóa khỏi Workspace</h2>
+                <div class="alert-box">
+                    <p>Bạn đã bị xóa khỏi workspace <strong>"${workspaceName}"</strong> bởi <strong>${removerName}</strong>.</p>
+                </div>
+                <p>Bạn không còn quyền truy cập vào workspace này nữa.</p>
+                <div class="footer">
+                    <p>Email này được gửi từ PlanNex.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
 function getOTPEmailTemplate(fullName, otp) {
     return `
         <!DOCTYPE html>
@@ -418,5 +449,6 @@ module.exports = {
     getPasswordResetCodeEmailTemplate,
     getWorkspaceDeletedEmailTemplate,
     getBoardCreatedEmailTemplate,
-    getBoardDeletedEmailTemplate
+    getBoardDeletedEmailTemplate,
+    getMemberRemovedEmailTemplate
 };

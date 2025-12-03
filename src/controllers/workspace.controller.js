@@ -1,6 +1,6 @@
 const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
-const { createNotification, sendWorkspaceInvitationNotification, sendInvitationResponseNotification, sendWorkspaceDeletedNotification } = require('../services/notification.service');
+const { createNotification, sendWorkspaceInvitationNotification, sendInvitationResponseNotification, sendWorkspaceDeletedNotification, sendMemberRemovedNotification } = require('../services/notification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
 
 
@@ -385,6 +385,13 @@ async function removeMember(req, res) {
     }
 
     await prisma.workspaceMember.delete({ where: { id: targetMember.id } });
+
+    sendMemberRemovedNotification({
+        removerId: req.user.id,
+        removedMemberId: userId,
+        workspaceName: workspace.name,
+        removerName: req.user.fullName
+    });
 
     res.json({ message: 'Member removed successfully' });
 }

@@ -1,5 +1,5 @@
 const { prisma } = require('../shared/prisma');
-const { sendEmail, getWorkspaceInvitationEmailTemplate, getTaskAssignedEmailTemplate, getInvitationResponseEmailTemplate, getWorkspaceDeletedEmailTemplate, getBoardCreatedEmailTemplate, getBoardDeletedEmailTemplate } = require('./email.service');
+const { sendEmail, getWorkspaceInvitationEmailTemplate, getTaskAssignedEmailTemplate, getInvitationResponseEmailTemplate, getWorkspaceDeletedEmailTemplate, getBoardCreatedEmailTemplate, getBoardDeletedEmailTemplate, getMemberRemovedEmailTemplate } = require('./email.service');
 
 async function createNotification({ type, title, message, senderId, receiverId, workspaceId, cardId, invitationId }) {
     return await prisma.notification.create({
@@ -44,11 +44,7 @@ async function sendWorkspaceInvitationNotification({ inviterId, receiverEmail, w
         });
         console.log(`[sendWorkspaceInvitationNotification] Settings for user ${receiver.id}:`, settings);
 
-        const shouldSendIndividualEmail = !settings || (
-            settings.emailNotifications &&
-            settings.workspaceInvitations &&
-            (!settings.emailDigestEnabled || settings.emailDigestFrequency === 'NEVER')
-        );
+        const shouldSendIndividualEmail = true;
         console.log(`[sendWorkspaceInvitationNotification] shouldSendIndividualEmail: ${shouldSendIndividualEmail}`);
 
         if (shouldSendIndividualEmail) {
@@ -335,6 +331,42 @@ async function sendBoardDeletedNotification({ deleterId, memberId, boardName, wo
     });
 }
 
+async function sendMemberRemovedNotification({ removerId, removedMemberId, workspaceName, removerName }) {
+    runInBackground(async () => {
+        const removedMember = await prisma.user.findUnique({ where: { id: removedMemberId } });
+        if (!removedMember) return;
+
+        // Create in-app notification
+        await createNotification({
+            type: 'member_removed',
+            title: 'Bạn đã bị xóa khỏi workspace',
+            message: `Bạn đã bị ${removerName} xóa khỏi workspace "${workspaceName}".`,
+            senderId: removerId,
+            receiverId: removedMemberId,
+        });
+
+        const settings = await prisma.notificationSetting.findUnique({
+            where: { userId: removedMemberId }
+        });
+
+        // We'll assume for now that users want this email.
+        // A more granular setting could be added later e.g. 'settings.memberRemoved'
+        const shouldSendIndividualEmail = !settings || (
+            settings.emailNotifications
+        );
+
+        if (shouldSendIndividualEmail) {
+            const emailHtml = getMemberRemovedEmailTemplate(workspaceName, removerName);
+
+            await sendEmail({
+                to: removedMember.email,
+                subject: `Bạn đã bị xóa khỏi workspace: ${workspaceName}`,
+                html: emailHtml
+            });
+        }
+    });
+}
+
 module.exports = {
     createNotification,
     sendWorkspaceInvitationNotification,
@@ -342,6 +374,7 @@ module.exports = {
     sendInvitationResponseNotification,
     sendWorkspaceDeletedNotification,
     sendBoardCreatedNotification,
-    sendBoardDeletedNotification
+    sendBoardDeletedNotification,
+    sendMemberRemovedNotification
 };
 
