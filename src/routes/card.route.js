@@ -1,16 +1,17 @@
 const router = require('express').Router();
 const { auth } = require('../middleware/auth');
-const { 
+const {
     createCard,
-    listCardsByList, 
-    getCard, 
-    updateCard, 
-    deleteCard, 
-    moveCard, 
-    assignCardMember,      
-    removeCardMember,      
-    getCardAttachments,    
-    deleteAttachment       
+    listCardsByList,
+    getCard,
+    updateCard,
+    deleteCard,
+    moveCard,
+    assignCardMember,
+    removeCardMember,
+    getCardAttachments,
+    deleteAttachment,
+    getFilteredCards
 } = require('../controllers/card.controller');
 
 
@@ -18,6 +19,7 @@ router.use(auth(true));
 
 // --- CRUD CƠ BẢN VÀ DI CHUYỂN ---
 router.post('/', createCard);
+router.get('/board/:boardId/filter', getFilteredCards); // Lọc cards theo board (đặt trước /:cardId)
 router.get('/:cardId', getCard);
 router.patch('/:cardId', updateCard);
 router.delete('/:cardId', deleteCard);
