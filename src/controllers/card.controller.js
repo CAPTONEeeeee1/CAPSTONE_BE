@@ -256,7 +256,10 @@ async function listCardsByList(req, res) {
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
     // Build where clause
-    const where = { listId };
+    const where = {
+        listId,
+        archivedAt: null  // Exclude archived cards
+    };
     if (q) where.OR = [
         { title: { contains: String(q), mode: 'insensitive' } },
         { description: { contains: String(q), mode: 'insensitive' } }
@@ -381,7 +384,11 @@ async function deleteCard(req, res) {
 
     // Tùy chọn: Thêm kiểm tra quyền admin/owner/reporter để xóa
 
-    await prisma.card.delete({ where: { id: cardId } });
+    // Soft delete: Set archivedAt timestamp instead of hard delete
+    await prisma.card.update({
+        where: { id: cardId },
+        data: { archivedAt: new Date() }
+    });
 
     // Tùy chọn: Ghi log activity cho xóa
 
@@ -576,7 +583,10 @@ async function getFilteredCards(req, res) {
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
     // Build filter conditions
-    const where = { boardId };
+    const where = {
+        boardId,
+        archivedAt: null  // Exclude archived cards
+    };
 
     // Filter by members
     if (memberIds) {
