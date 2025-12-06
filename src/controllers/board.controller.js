@@ -136,7 +136,10 @@ async function getWorkSpaceBoards(req, res) {
     if (!member) return res.status(403).json({ error: 'Not in workspace' });
 
     const boards = await prisma.board.findMany({
-        where: { workspaceId },
+        where: {
+            workspaceId,
+            archivedAt: null  // Exclude archived boards
+        },
         include: { lists: { orderBy: { orderIdx: 'asc' } } }
     });
     return res.json({ boards });
@@ -223,8 +226,10 @@ async function deleteBoard(req, res) {
         return res.status(403).json({ error: 'Only workspace admin or owner can delete board' });
     }
 
-    await prisma.board.delete({
-        where: { id: boardId }
+    // Soft delete: Set archivedAt timestamp instead of hard delete
+    await prisma.board.update({
+        where: { id: boardId },
+        data: { archivedAt: new Date() }
     });
 
     // --- NEW NOTIFICATION LOGIC ---

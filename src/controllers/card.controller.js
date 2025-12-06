@@ -1,6 +1,6 @@
 const { prisma } = require('../shared/prisma');
 // Hợp nhất tất cả các validators
-const { createCardSchema, updateCardSchema, moveCardSchema, assignMemberSchema } = require('../validators/card.validators'); 
+const { createCardSchema, updateCardSchema, moveCardSchema, assignMemberSchema } = require('../validators/card.validators');
 // Import các services mới từ Code 2
 const { sendTaskAssignedNotification } = require('../services/notification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
@@ -166,7 +166,7 @@ async function createCard(req, res) {
             // Sử dụng createManyAndReturn (nếu Prisma client hỗ trợ, nếu không phải dùng createMany và sau đó findMany)
             // Giả định createManyAndReturn được hỗ trợ hoặc sẽ sử dụng một logic thay thế để lấy lại dữ liệu
             try {
-                return prisma.cardAttachment.createManyAndReturn({ 
+                return prisma.cardAttachment.createManyAndReturn({
                     data: attachments.map(a => ({
                         cardId: card.id,
                         fileName: a.fileName,
@@ -178,9 +178,9 @@ async function createCard(req, res) {
                     select: { id: true, fileName: true, fileSize: true, mimeType: true, fileUrl: true, uploadedAt: true }
                 });
             } catch (e) {
-                 // Fallback if createManyAndReturn is not available (common in older Prisma)
-                 await prisma.cardAttachment.createMany({
-                     data: attachments.map(a => ({
+                // Fallback if createManyAndReturn is not available (common in older Prisma)
+                await prisma.cardAttachment.createMany({
+                    data: attachments.map(a => ({
                         cardId: card.id,
                         fileName: a.fileName,
                         fileSize: a.fileSize,
@@ -188,9 +188,9 @@ async function createCard(req, res) {
                         fileUrl: a.fileUrl,
                         uploadedById: req.user.id
                     }))
-                 });
-                 // Thực hiện findMany để lấy lại dữ liệu chi tiết
-                 return prisma.cardAttachment.findMany({ where: { cardId: card.id }, orderBy: { uploadedAt: 'desc' } });
+                });
+                // Thực hiện findMany để lấy lại dữ liệu chi tiết
+                return prisma.cardAttachment.findMany({ where: { cardId: card.id }, orderBy: { uploadedAt: 'desc' } });
             }
         })()
     ]);
@@ -256,7 +256,10 @@ async function listCardsByList(req, res) {
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
     // Build where clause
-    const where = { listId };
+    const where = {
+        listId,
+        archivedAt: null  // Exclude archived cards
+    };
     if (q) where.OR = [
         { title: { contains: String(q), mode: 'insensitive' } },
         { description: { contains: String(q), mode: 'insensitive' } }
@@ -270,7 +273,7 @@ async function listCardsByList(req, res) {
             where,
             select: {
                 // Sử dụng select chi tiết hơn từ Code 2
-                id: true, boardId: true, listId: true, keySeq: true, title: true, description: true, 
+                id: true, boardId: true, listId: true, keySeq: true, title: true, description: true,
                 priority: true, dueDate: true, startDate: true, orderIdx: true, createdAt: true, updatedAt: true,
                 labels: {
                     select: { labelId: true, label: { select: { id: true, name: true, colorHex: true } } }
@@ -306,8 +309,8 @@ async function getCard(req, res) {
     const card = await prisma.card.findUnique({
         where: { id: cardId },
         select: {
-            id: true, boardId: true, listId: true, keySeq: true, title: true, description: true, priority: true, dueDate: true, 
-            startDate: true, orderIdx: true, custom: true, reporterId: true, createdById: true, updatedById: true, 
+            id: true, boardId: true, listId: true, keySeq: true, title: true, description: true, priority: true, dueDate: true,
+            startDate: true, orderIdx: true, custom: true, reporterId: true, createdById: true, updatedById: true,
             createdAt: true, updatedAt: true,
             board: { select: { id: true, keySlug: true, workspaceId: true } },
             labels: { select: { labelId: true, label: { select: { id: true, name: true, colorHex: true } } } },
@@ -329,9 +332,9 @@ async function getCard(req, res) {
 
     // Format response (Tối ưu từ Code 2)
     const humanKey = makeBoardKey(card.board.keySlug, card.keySeq);
-    
+
     // Loại bỏ trường board để response sạch hơn
-    const { board, ...cardDetails } = card; 
+    const { board, ...cardDetails } = card;
 
     res.json({
         card: {
@@ -360,9 +363,9 @@ async function updateCard(req, res) {
 
     // Thêm updatedById (Từ Code 1 & 2)
     const updated = await prisma.card.update({ where: { id: cardId }, data: { ...patch, updatedById: req.user.id } });
-    
+
     // Tùy chọn: Ghi log activity cho cập nhật
-    
+
     res.json({ card: updated });
 }
 
@@ -378,11 +381,15 @@ async function deleteCard(req, res) {
     const { board, workspaceMember } = await checkWorkspaceAccess(card.boardId, req.user.id);
     if (!board) return res.status(404).json({ error: 'Board not found' });
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
-    
+
     // Tùy chọn: Thêm kiểm tra quyền admin/owner/reporter để xóa
 
-    await prisma.card.delete({ where: { id: cardId } });
-    
+    // Soft delete: Set archivedAt timestamp instead of hard delete
+    await prisma.card.update({
+        where: { id: cardId },
+        data: { archivedAt: new Date() }
+    });
+
     // Tùy chọn: Ghi log activity cho xóa
 
     res.json({ success: true });
@@ -547,23 +554,121 @@ async function deleteAttachment(req, res) {
 
     // Giả định `member` là thông tin của người dùng hiện tại (workspaceMember)
     if (attachment.uploadedById !== req.user.id && !['admin', 'owner'].includes(workspaceMember.role)) { // Đã sửa 'maintainer' thành 'owner'
-         return res.status(403).json({ error: 'Permission denied: Only uploader, owner, or admin can delete' });
+        return res.status(403).json({ error: 'Permission denied: Only uploader, owner, or admin can delete' });
     }
 
     await prisma.cardAttachment.delete({ where: { id: attachmentId } });
     res.json({ message: 'Attachment deleted successfully' });
 }
 
+/**
+ * Lọc cards trong board theo members và priority
+ */
+async function getFilteredCards(req, res) {
+    const { boardId } = req.params;
+    const { memberIds, priority } = req.query;
 
-module.exports = { 
-    createCard, 
-    getCard, 
-    updateCard, 
-    deleteCard, 
-    moveCard, 
-    listCardsByList, 
-    assignCardMember, 
-    removeCardMember, 
-    getCardAttachments, 
-    deleteAttachment 
+    // Check board access
+    const board = await prisma.board.findUnique({
+        where: { id: boardId },
+        select: { id: true, workspaceId: true, keySlug: true }
+    });
+
+    if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    const workspaceMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: board.workspaceId, userId: req.user.id }
+    });
+
+    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+
+    // Build filter conditions
+    const where = {
+        boardId,
+        archivedAt: null  // Exclude archived cards
+    };
+
+    // Filter by members
+    if (memberIds) {
+        const memberIdsArray = Array.isArray(memberIds) ? memberIds : memberIds.split(',');
+        where.members = {
+            some: {
+                userId: { in: memberIdsArray }
+            }
+        };
+    }
+
+    // Filter by priority
+    if (priority) {
+        const priorityArray = Array.isArray(priority) ? priority : priority.split(',');
+        where.priority = { in: priorityArray };
+    }
+
+    try {
+        const cards = await prisma.card.findMany({
+            where,
+            include: {
+                list: {
+                    select: { id: true, name: true, orderIdx: true }
+                },
+                members: {
+                    include: {
+                        user: {
+                            select: { id: true, email: true, fullName: true, avatar: true }
+                        }
+                    }
+                },
+                labels: {
+                    include: {
+                        label: {
+                            select: { id: true, name: true, colorHex: true }
+                        }
+                    }
+                },
+                _count: {
+                    select: { comments: true, attachments: true }
+                }
+            },
+            orderBy: [
+                { list: { orderIdx: 'asc' } },
+                { orderIdx: 'asc' }
+            ]
+        });
+
+        // Transform response
+        const transformedCards = cards.map(card => ({
+            ...card,
+            key: makeBoardKey(board.keySlug, card.keySeq),
+            commentsCount: card._count.comments,
+            attachmentsCount: card._count.attachments,
+            labels: card.labels.map(cl => ({
+                labelId: cl.label.id,
+                name: cl.label.name,
+                color: cl.label.colorHex,
+                label: cl.label
+            }))
+        }));
+
+        return res.json({
+            cards: transformedCards,
+            total: transformedCards.length
+        });
+    } catch (error) {
+        console.error('Error filtering cards:', error);
+        return res.status(500).json({ error: 'Failed to filter cards' });
+    }
+}
+
+module.exports = {
+    createCard,
+    getCard,
+    updateCard,
+    deleteCard,
+    moveCard,
+    listCardsByList,
+    assignCardMember,
+    removeCardMember,
+    getCardAttachments,
+    deleteAttachment,
+    getFilteredCards
 };

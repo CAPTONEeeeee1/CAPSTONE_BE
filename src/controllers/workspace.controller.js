@@ -13,13 +13,13 @@ async function createWorkspace(req, res) {
 
     const ws = await prisma.$transaction(async (tx) => {
         // Tạo Workspace với visibility (từ Code 2)
-        const workspace = await tx.workspace.create({ 
-            data: { 
-                name, 
+        const workspace = await tx.workspace.create({
+            data: {
+                name,
                 description: description ?? null, // Đảm bảo description là optional và có thể null
-                visibility, 
-                ownerId: req.user.id 
-            } 
+                visibility,
+                ownerId: req.user.id
+            }
         });
         // Tạo thành viên Owner
         await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'owner', joinedAt: new Date() } });
@@ -67,7 +67,7 @@ async function updateWorkspace(req, res) {
         where: { id: workspaceId },
         data: updateData
     });
-    
+
     // Log activity (Tùy chọn)
 
     res.json({ workspace: updated });
@@ -107,7 +107,7 @@ async function deleteWorkspace(req, res) {
             });
         }
     }
-    
+
     // Log activity (Tùy chọn)
 
     res.json({ success: true, message: 'Workspace deleted successfully' });
@@ -165,7 +165,7 @@ async function getWorkspaceById(req, res) {
 async function getWorkspaceBoards(req, res) {
     const { workspaceId } = req.params;
     // Giả định middleware đã kiểm tra quyền truy cập workspace
-    const boards = await prisma.board.findMany({ 
+    const boards = await prisma.board.findMany({
         where: { workspaceId: workspaceId },
         orderBy: { createdAt: 'asc' }
     });
@@ -188,7 +188,8 @@ async function getWorkspaceMembers(req, res) {
                 select: {
                     id: true,
                     email: true,
-                    fullName: true
+                    fullName: true,
+                    avatar: true
                 }
             }
         },
@@ -391,7 +392,7 @@ async function removeMember(req, res) {
 
     const targetMember = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId } });
     if (!targetMember) return res.status(404).json({ error: 'Member not found' });
-    
+
     // Admin không thể tự ý xóa Admin khác
     if (currentMember.role === 'admin' && targetMember.role === 'admin') {
         return res.status(400).json({ error: 'Permission denied: Admin cannot remove another admin' });
@@ -460,7 +461,7 @@ async function updateMemberRole(req, res) {
     }
     // Kiểm tra quyền: Owner không được hạ cấp chính mình (ngay cả khi ownerId !== userId)
     if (currentMember.role === 'owner' && targetMember.userId === currentMember.userId) {
-         return res.status(400).json({ error: 'Owner cannot change their own role' });
+        return res.status(400).json({ error: 'Owner cannot change their own role' });
     }
 
     const updated = await prisma.workspaceMember.update({
@@ -472,19 +473,19 @@ async function updateMemberRole(req, res) {
 }
 
 
-module.exports = { 
-    createWorkspace, 
-    updateWorkspace, 
-    deleteWorkspace, 
-    listMyWorkspaces, 
+module.exports = {
+    createWorkspace,
+    updateWorkspace,
+    deleteWorkspace,
+    listMyWorkspaces,
     getWorkspaceById,
-    getWorkspaceBoards, 
-    getWorkspaceMembers, 
-    inviteMember, 
-    acceptInvitation, 
-    rejectInvitation, 
-    listMyInvitations, 
-    removeMember, 
-    leaveWorkspace, 
-    updateMemberRole 
+    getWorkspaceBoards,
+    getWorkspaceMembers,
+    inviteMember,
+    acceptInvitation,
+    rejectInvitation,
+    listMyInvitations,
+    removeMember,
+    leaveWorkspace,
+    updateMemberRole
 };

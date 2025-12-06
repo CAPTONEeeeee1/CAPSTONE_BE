@@ -25,7 +25,7 @@ async function sendEmail({ to, subject, html }) {
         console.error("LỖI CẤU HÌNH: EMAIL_SENDER không được định nghĩa. Không thể gửi email.");
         return { success: false, error: "EMAIL_SENDER not configured." };
     }
-    
+
     try {
         await transporter.sendMail({
             from: `"PlanNex" <${EMAIL_SENDER}>`,
@@ -439,6 +439,100 @@ function getPasswordResetCodeEmailTemplate(fullName, resetCode) {
     `;
 }
 
+/**
+ * Template Email: Thông báo đổi mật khẩu thành công
+ */
+function getPasswordChangedEmailTemplate(fullName, changeTime, ipAddress, userAgent) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                .header { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 40px 20px; text-align: center; }
+                .header h1 { color: white; margin: 0; font-size: 28px; }
+                .content { padding: 40px 30px; }
+                .success-box { background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); padding: 30px; border-radius: 12px; text-align: center; margin: 30px 0; border: 3px solid #28a745; }
+                .success-icon { font-size: 64px; margin-bottom: 10px; }
+                .info-box { background: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0; border-radius: 4px; }
+                .info-item { display: flex; margin: 10px 0; }
+                .info-label { font-weight: bold; min-width: 120px; color: #555; }
+                .info-value { color: #333; }
+                .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px; }
+                .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef; }
+                .button { display: inline-block; padding: 12px 30px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+                .button:hover { background: #0056b3; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🔐 Mật Khẩu Đã Được Thay Đổi</h1>
+                </div>
+                <div class="content">
+                    <p>Xin chào <strong>${fullName}</strong>,</p>
+                    
+                    <div class="success-box">
+                        <div class="success-icon">✅</div>
+                        <h2 style="color: #28a745; margin: 10px 0;">Thành công!</h2>
+                        <p style="margin: 10px 0; color: #155724;">Mật khẩu của bạn đã được cập nhật thành công.</p>
+                    </div>
+                    
+                    <p>Mật khẩu tài khoản PlanNex của bạn vừa được thay đổi. Nếu đây là hành động của bạn, bạn có thể bỏ qua email này.</p>
+                    
+                    <div class="info-box">
+                        <p style="margin: 0 0 15px 0;"><strong>📋 Thông tin thay đổi:</strong></p>
+                        <div class="info-item">
+                            <span class="info-label">⏰ Thời gian:</span>
+                            <span class="info-value">${changeTime}</span>
+                        </div>
+                        ${ipAddress ? `
+                        <div class="info-item">
+                            <span class="info-label">🌐 Địa chỉ IP:</span>
+                            <span class="info-value">${ipAddress}</span>
+                        </div>
+                        ` : ''}
+                        ${userAgent ? `
+                        <div class="info-item">
+                            <span class="info-label">💻 Thiết bị:</span>
+                            <span class="info-value">${userAgent}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="warning">
+                        <p><strong>⚠️ Nếu bạn không thực hiện thay đổi này:</strong></p>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li>Tài khoản của bạn có thể đã bị xâm nhập</li>
+                            <li>Vui lòng đặt lại mật khẩu ngay lập tức</li>
+                            <li>Kiểm tra các hoạt động gần đây trong tài khoản</li>
+                            <li>Liên hệ với bộ phận hỗ trợ nếu cần thiết</li>
+                        </ul>
+                        <p style="text-align: center; margin-top: 20px;">
+                            <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password" class="button">Đặt Lại Mật Khẩu</a>
+                        </p>
+                    </div>
+                    
+                    <p style="margin-top: 30px;"><strong>💡 Mẹo bảo mật:</strong></p>
+                    <ul style="color: #666;">
+                        <li>Sử dụng mật khẩu mạnh và duy nhất cho mỗi tài khoản</li>
+                        <li>Kích hoạt xác thực hai yếu tố nếu có thể</li>
+                        <li>Không chia sẻ mật khẩu với bất kỳ ai</li>
+                        <li>Thay đổi mật khẩu định kỳ</li>
+                    </ul>
+                </div>
+                <div class="footer">
+                    <p>Email này được gửi từ <strong>PlanNex</strong></p>
+                    <p>Nếu bạn cần hỗ trợ, vui lòng liên hệ support@plannex.com</p>
+                    <p style="margin-top: 10px; color: #999;">© 2025 PlanNex. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
 
 module.exports = {
     sendEmail,
@@ -447,6 +541,7 @@ module.exports = {
     getInvitationResponseEmailTemplate,
     getOTPEmailTemplate,
     getPasswordResetCodeEmailTemplate,
+    getPasswordChangedEmailTemplate,
     getWorkspaceDeletedEmailTemplate,
     getBoardCreatedEmailTemplate,
     getBoardDeletedEmailTemplate,

@@ -23,6 +23,7 @@ const {
   resetPasswordWithCode
 } = require('../services/verification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
+const { sendEmail, getPasswordChangedEmailTemplate } = require('../services/email.service');
 
 function pickUA(req) {
   return req.headers['user-agent'] || 'unknown';
@@ -210,7 +211,7 @@ async function logout(req, res) {
       action: 'user_logout',
       ...getClientInfo(req),
     });
-  } catch {}
+  } catch { }
   return res.json({ success: true });
 }
 
@@ -293,6 +294,38 @@ async function changePassword(req, res) {
 
   const newHash = await hashPassword(newPassword);
   await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash: newHash } });
+
+  try {
+    console.log('🔐 Preparing to send password change notification email to:', user.email);
+
+    const changeTime = new Date().toLocaleString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const clientInfo = getClientInfo(req);
+    const ipAddress = clientInfo.ip || req.ip || req.connection?.remoteAddress;
+    const userAgent = req.get('user-agent');
+
+    const emailHtml = getPasswordChangedEmailTemplate(
+      user.fullName || user.email,
+      changeTime,
+      ipAddress,
+      userAgent
+    );
+
+    const result = await sendEmail({
+      to: user.email,
+      subject: '🔐 Mật khẩu của bạn đã được thay đổi - PlanNex',
+      html: emailHtml
+    });
+  } catch (emailError) {
+    console.error('❌ Exception while sending password change notification email:', emailError);
+  }
 
   return res.json({ message: 'Đổi mật khẩu thành công' });
 }
