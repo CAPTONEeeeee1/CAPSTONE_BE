@@ -19,6 +19,8 @@ const adminRoutes = require('./admin.route');
 const reportRoutes = require('./report.route');
 const activityRoutes = require('./activity.route');
 const settingRoutes = require('./setting.route');
+const paymentRoutes = require('./payment.route');
+const chatRoutes = require('./chat.route');
 
 // --- Authentication & User Management ---
 router.use('/auth', authRoutes);
@@ -38,6 +40,8 @@ router.use('/admin', adminRoutes);
 router.use('/reports', reportRoutes);
 router.use('/activities', activityRoutes);
 router.use('/settings', settingRoutes);
+router.use('/payment', paymentRoutes);
+router.use('/chat', chatRoutes);
 
 // --- 404 handler (Express 5 compatible) ---
 router.use((req, res) => {

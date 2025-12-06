@@ -21,6 +21,23 @@ async function createBoard(req, res) {
             return res.status(403).json({ error: 'Only workspace owner and admin can create boards' });
         }
 
+        // Check workspace plan and limit boards if it's a FREE plan
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: workspaceId },
+        });
+
+        if (workspace.plan === 'FREE') {
+            const boardCount = await prisma.board.count({
+                where: { workspaceId: workspaceId },
+            });
+
+            if (boardCount >= 3) {
+                return res.status(403).json({
+                    error: 'Free plan is limited to 3 boards. Please upgrade to create more.',
+                });
+            }
+        }
+        
         // Kiểm tra tên board trùng lặp trong cùng workspace
         const existingBoard = await prisma.board.findFirst({
             where: {
@@ -71,7 +88,6 @@ async function createBoard(req, res) {
 
         // --- NEW NOTIFICATION LOGIC ---
         const board = result.b;
-        const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
         const creator = await prisma.user.findUnique({ where: { id: req.user.id } });
 
         if (workspace && creator) {

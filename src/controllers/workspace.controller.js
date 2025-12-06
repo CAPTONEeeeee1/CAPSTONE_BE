@@ -215,6 +215,19 @@ async function inviteMember(req, res) {
         return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
+    // Check workspace plan and limit members if it's a FREE plan
+    if (workspace.plan === 'FREE') {
+        const memberCount = await prisma.workspaceMember.count({
+            where: { workspaceId: workspaceId },
+        });
+
+        if (memberCount >= 5) {
+            return res.status(403).json({
+                error: 'Free plan is limited to 5 members. Please upgrade to invite more.',
+            });
+        }
+    }
+
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 

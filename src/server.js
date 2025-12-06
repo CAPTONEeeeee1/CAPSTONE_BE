@@ -1,11 +1,21 @@
 require("dotenv").config();
 const express = require("express");
+const http = require('http');
+const { Server } = require("socket.io");
 const cors = require("cors");
 const passport = require("./config/passport.config");
 const routes = require("./routes");
 const { scheduleDigestWorker } = require("./workers/digest.worker");
+const initializeSocket = require('./socket');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map(s => s.trim()) : "http://localhost:5173",
+    methods: ["GET", "POST"]
+  }
+});
 
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim())
@@ -33,8 +43,10 @@ app.use(passport.initialize());
 
 app.use("/", routes);
 
+initializeSocket(io);
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
   

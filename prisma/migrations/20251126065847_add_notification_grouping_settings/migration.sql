@@ -1,5 +1,9 @@
--- CreateEnum
-CREATE TYPE "EmailDigestFrequency" AS ENUM ('HOURLY', 'DAILY', 'WEEKLY', 'NEVER');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'emaildigestfrequency') THEN
+        CREATE TYPE "EmailDigestFrequency" AS ENUM ('HOURLY', 'DAILY', 'WEEKLY', 'NEVER');
+    END IF;
+END$$;
 
 -- AlterTable
 ALTER TABLE "NotificationSetting" ADD COLUMN     "emailDigestEnabled" BOOLEAN NOT NULL DEFAULT true,

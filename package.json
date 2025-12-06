@@ -15,7 +15,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^6.17.1",
-    "bcryptjs": "^3.0.3",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
@@ -24,6 +24,8 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "prisma": "^6.17.1",
+    "socket.io": "^4.8.1",
+    "vnpay": "^1.6.1",
     "zod": "^4.1.12"
   }
 }
