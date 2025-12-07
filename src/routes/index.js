@@ -19,13 +19,9 @@ const adminRoutes = require('./admin.route');
 const reportRoutes = require('./report.route');
 const activityRoutes = require('./activity.route');
 const settingRoutes = require('./setting.route');
-<<<<<<< HEAD
-const paymentRoutes = require('./payment.route');
-const chatRoutes = require('./chat.route');
-=======
+const paymentRoutes = require('./payment.route'); 
+const chatRoutes = require('./chat.route');       
 const trashRoutes = require('./trash.route');
->>>>>>> 0114ff94b30061ebce74f7a57c70650eb275d817
-
 // --- Authentication & User Management ---
 router.use('/auth', authRoutes);
 
@@ -44,12 +40,9 @@ router.use('/admin', adminRoutes);
 router.use('/reports', reportRoutes);
 router.use('/activities', activityRoutes);
 router.use('/settings', settingRoutes);
-<<<<<<< HEAD
-router.use('/payment', paymentRoutes);
-router.use('/chat', chatRoutes);
-=======
-router.use('/trash', trashRoutes);
->>>>>>> 0114ff94b30061ebce74f7a57c70650eb275d817
+router.use('/payment', paymentRoutes); 
+router.use('/chat', chatRoutes);       
+router.use('/trash', trashRoutes);     
 
 // --- 404 handler (Express 5 compatible) ---
 router.use((req, res) => {

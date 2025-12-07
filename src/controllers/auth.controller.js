@@ -150,8 +150,18 @@ async function login(req, res) {
   if (user.authMethod === 'google')
     return res.status(401).json({ error: 'Tài khoản này đăng ký qua Google.' });
 
-  if (!user.emailVerified || user.status !== 'active')
-    return res.status(403).json({ error: 'Tài khoản chưa được kích hoạt hoặc bị khóa.' });
+  if (!user.emailVerified)
+    return res.status(403).json({ error: 'Tài khoản chưa được kích hoạt.' });
+
+  if (user.status === 'suspended')
+    return res.status(403).json({
+      error: 'Tài khoản của bạn đã bị khóa.',
+      code: 'ACCOUNT_SUSPENDED',
+    });
+
+  if (user.status !== 'active')
+    return res.status(403).json({ error: 'Tài khoản của bạn không hoạt động.' });
+
 
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng' });
