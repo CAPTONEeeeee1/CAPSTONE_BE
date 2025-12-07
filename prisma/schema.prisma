@@ -148,6 +148,7 @@ model Payment {
   workspaceId   String
   userId        String?
   amount        Float
+  plan          String?       // e.g., 'free_trial', 'semiannual', 'annual'
   status        PaymentStatus @default(PENDING)
   transactionNo String?
   createdAt     DateTime      @default(now())

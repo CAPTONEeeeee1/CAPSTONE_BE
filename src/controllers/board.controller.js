@@ -213,50 +213,62 @@ async function renameBoard(req, res) {
 async function deleteBoard(req, res) {
     const { boardId } = req.params;
 
-    const board = await prisma.board.findUnique({ where: { id: boardId } });
-    if (!board) return res.status(404).json({ error: 'Board not found' });
+    try {
+        const board = await prisma.board.findUnique({ where: { id: boardId } });
+        if (!board) return res.status(404).json({ error: 'Board not found' });
 
-    const workspaceMember = await prisma.workspaceMember.findFirst({
-        where: { workspaceId: board.workspaceId, userId: req.user.id }
-    });
-    if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
-
-    // Kiểm tra quyền: Chỉ owner hoặc admin mới được xóa board
-    if (!['owner', 'admin'].includes(workspaceMember.role)) {
-        return res.status(403).json({ error: 'Only workspace admin or owner can delete board' });
-    }
-
-    // Soft delete: Set archivedAt timestamp instead of hard delete
-    await prisma.board.update({
-        where: { id: boardId },
-        data: { archivedAt: new Date() }
-    });
-
-    // --- NEW NOTIFICATION LOGIC ---
-    const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
-    const deleter = await prisma.user.findUnique({ where: { id: req.user.id } });
-
-    if (workspace && deleter) {
-        const members = await prisma.workspaceMember.findMany({
-            where: { workspaceId: board.workspaceId },
+        const workspaceMember = await prisma.workspaceMember.findFirst({
+            where: { workspaceId: board.workspaceId, userId: req.user.id }
         });
+        if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
-        for (const member of members) {
-            // Do not send to the deleter
-            if (member.userId !== req.user.id) {
-                await sendBoardDeletedNotification({
-                    deleterId: req.user.id,
-                    memberId: member.userId,
-                    boardName: board.name,
-                    workspaceName: workspace.name,
-                    deleterName: deleter.fullName
+        if (!['owner', 'admin'].includes(workspaceMember.role)) {
+            return res.status(403).json({ error: 'Only workspace admin or owner can delete board' });
+        }
+
+        // Soft delete: Set archivedAt timestamp
+        await prisma.board.update({
+            where: { id: boardId },
+            data: { archivedAt: new Date() }
+        });
+        
+        // --- Send success response immediately ---
+        res.json({ message: 'Board deleted successfully' });
+
+        // --- Handle non-critical notification logic separately ---
+        try {
+            const workspace = await prisma.workspace.findUnique({ where: { id: board.workspaceId } });
+            const deleter = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+            if (workspace && deleter) {
+                const members = await prisma.workspaceMember.findMany({
+                    where: { workspaceId: board.workspaceId },
                 });
+
+                for (const member of members) {
+                    if (member.userId !== req.user.id) {
+                        await sendBoardDeletedNotification({
+                            deleterId: req.user.id,
+                            memberId: member.userId,
+                            boardName: board.name,
+                            workspaceName: workspace.name,
+                            deleterName: deleter.fullName
+                        });
+                    }
+                }
             }
+        } catch (notificationError) {
+            // Log the error but don't crash the server or fail the request
+            console.error('[DIAGNOSTIC] Failed to send board deletion notifications:', notificationError);
+        }
+
+    } catch (error) {
+        console.error("Error in deleteBoard function:", error);
+        // Avoid sending another response if one has already been sent
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'An unexpected error occurred while deleting the board.' });
         }
     }
-    // --- END NEW NOTIFICATION LOGIC ---
-
-    return res.json({ message: 'Board deleted successfully' });
 }
 
 

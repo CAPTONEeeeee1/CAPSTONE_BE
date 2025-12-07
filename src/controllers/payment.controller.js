@@ -27,10 +27,10 @@ async function createVNPayPayment(req, res) {
     process.env.TZ = 'Asia/Ho_Chi_Minh';
 
     const userId = req.user.id;
-    const { amount, orderInfo, workspaceId } = req.body; 
+    const { amount, orderInfo, workspaceId, plan } = req.body; 
 
-    if (!amount || !orderInfo || !workspaceId) {
-        return res.status(400).json({ error: 'Missing required payment information: amount, orderInfo, or workspaceId.' });
+    if (!amount || !orderInfo || !workspaceId || !plan) {
+        return res.status(400).json({ error: 'Missing required payment information: amount, orderInfo, workspaceId, or plan.' });
     }
 
     try {
@@ -56,6 +56,7 @@ async function createVNPayPayment(req, res) {
                 workspaceId: workspaceId,
                 userId: userId, // Link payment to user
                 amount: amount,
+                plan: plan,
                 status: 'PENDING',
             },
         });
@@ -82,9 +83,9 @@ async function createVNPayPayment(req, res) {
         vnp_Params['vnp_Locale'] = 'vn';
         vnp_Params['vnp_CurrCode'] = 'VND';
         vnp_Params['vnp_TxnRef'] = orderId;
-        vnp_Params['vnp_OrderInfo'] = 'Upgrade to Premium Plan for workspace ' + workspaceId;
+        vnp_Params['vnp_OrderInfo'] = orderInfo; // Use orderInfo from request
         vnp_Params['vnp_OrderType'] = 'billpayment';
-        vnp_Params['vnp_Amount'] = amountValue; // Use the parsed amount directly
+        vnp_Params['vnp_Amount'] = amountValue * 100; // Multiply by 100 for VND
         vnp_Params['vnp_ReturnUrl'] = returnUrl;
         vnp_Params['vnp_IpAddr'] = ipAddr;
         vnp_Params['vnp_CreateDate'] = createDate;
