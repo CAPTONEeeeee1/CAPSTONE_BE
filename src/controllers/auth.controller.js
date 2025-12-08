@@ -22,7 +22,6 @@ const {
   createPasswordResetRequest,
   resetPasswordWithCode
 } = require('../services/verification.service');
-const { logActivity, getClientInfo } = require('../services/activity.service');
 const { sendEmail, getPasswordChangedEmailTemplate } = require('../services/email.service');
 
 function pickUA(req) {
@@ -171,9 +170,6 @@ async function login(req, res) {
     data: { lastLoginAt: new Date() },
   });
 
-  const clientInfo = getClientInfo(req);
-  logActivity({ userId: user.id, action: 'user_login', ...clientInfo });
-
   const pair = await issueTokenPair(user, pickUA(req), pickIP(req));
   return res.json({
     user: {
@@ -215,12 +211,6 @@ async function logout(req, res) {
   try {
     const decoded = verifyRefresh(refreshToken);
     await revokeRefreshToken(refreshToken, decoded.sub);
-
-    logActivity({
-      userId: decoded.sub,
-      action: 'user_logout',
-      ...getClientInfo(req),
-    });
   } catch { }
   return res.json({ success: true });
 }
@@ -317,8 +307,7 @@ async function changePassword(req, res) {
       minute: '2-digit'
     });
 
-    const clientInfo = getClientInfo(req);
-    const ipAddress = clientInfo.ip || req.ip || req.connection?.remoteAddress;
+    const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.get('user-agent');
 
     const emailHtml = getPasswordChangedEmailTemplate(

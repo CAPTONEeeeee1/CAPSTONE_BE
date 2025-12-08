@@ -312,7 +312,12 @@ async function getUserDashboardReport(req, res) {
       },
     }),
     prisma.activityLog.findMany({
-      where: { userId },
+      where: {
+        userId,
+        action: {
+          notIn: ['user_login', 'user_logout'],
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: 10,
       include: {
