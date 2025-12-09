@@ -2,6 +2,7 @@ const { prisma } = require('../shared/prisma');
 // Sử dụng tất cả các validators cần thiết
 const { createBoardSchema, renameBoardSchema } = require('../validators/board.validators');
 const { sendBoardCreatedNotification, sendBoardDeletedNotification } = require('../services/notification.service');
+const { logActivity } = require('../services/activity.service');
 
 // --- HÀM HỖ TRỢ (Nếu cần, nhưng đã được tích hợp trong getBoard/deleteBoard) ---
 
@@ -14,11 +15,12 @@ async function createBoard(req, res) {
         const { workspaceId, name, mode, keySlug, lists } = parsed.data;
 
         const m = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: req.user.id } });
+        console.log(`User ${req.user.id} trying to create a board in workspace ${workspaceId}. Role: ${m?.role}`);
         if (!m) return res.status(403).json({ error: 'Not in workspace' });
 
-        // Yêu cầu quyền owner hoặc admin để tạo boards (từ >>>>>>> main)
-        if (!['owner', 'admin'].includes(m.role)) {
-            return res.status(403).json({ error: 'Only workspace owner and admin can create boards' });
+        // Yêu cầu quyền owner hoặc leader để tạo boards
+        if (!['OWNER', 'LEADER'].includes(m.role)) {
+            return res.status(403).json({ error: `Your role is '${m.role}'. Only workspace owner and leader can create boards` });
         }
 
         // Check workspace plan and limit boards if it's a FREE plan
@@ -113,6 +115,17 @@ async function createBoard(req, res) {
         }
         // --- END NEW NOTIFICATION LOGIC ---
 
+        // Log activity
+        await logActivity({
+            userId: req.user.id,
+            workspaceId: board.workspaceId,
+            boardId: board.id,
+            action: 'created_board',
+            entityType: 'Board',
+            entityId: board.id,
+            entityName: board.name,
+        }, req);
+
         return res.status(201).json({ board: board, lists: result.lists });
     } catch (error) {
         console.error('Error creating board:', error);
@@ -204,6 +217,21 @@ async function renameBoard(req, res) {
         data: { name }
     });
 
+    // Log activity
+    await logActivity({
+        userId: req.user.id,
+        workspaceId: updatedBoard.workspaceId,
+        boardId: updatedBoard.id,
+        action: 'renamed_board',
+        entityType: 'Board',
+        entityId: updatedBoard.id,
+        entityName: updatedBoard.name,
+        metadata: {
+            oldName: board.name,
+            newName: updatedBoard.name
+        }
+    }, req);
+
     return res.json({ board: updatedBoard });
 }
 
@@ -222,8 +250,8 @@ async function deleteBoard(req, res) {
         });
         if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
-        if (!['owner', 'admin'].includes(workspaceMember.role)) {
-            return res.status(403).json({ error: 'Only workspace admin or owner can delete board' });
+        if (!['OWNER', 'LEADER'].includes(workspaceMember.role)) {
+            return res.status(403).json({ error: 'Only workspace owner or leader can delete board' });
         }
 
         // Soft delete: Set archivedAt timestamp
@@ -232,6 +260,17 @@ async function deleteBoard(req, res) {
             data: { archivedAt: new Date() }
         });
         
+        // Log activity after soft delete
+        await logActivity({
+            userId: req.user.id,
+            workspaceId: board.workspaceId,
+            boardId: board.id,
+            action: 'deleted_board',
+            entityType: 'Board',
+            entityId: board.id,
+            entityName: board.name,
+        }, req);
+
         // --- Send success response immediately ---
         res.json({ message: 'Board deleted successfully' });
 
@@ -289,6 +328,17 @@ async function togglePinBoard(req, res) {
         where: { id: boardId },
         data: { isPinned: !board.isPinned }
     });
+
+    // Log activity
+    await logActivity({
+        userId: req.user.id,
+        workspaceId: updated.workspaceId,
+        boardId: updated.id,
+        action: updated.isPinned ? 'pinned_board' : 'unpinned_board',
+        entityType: 'Board',
+        entityId: updated.id,
+        entityName: updated.name,
+    }, req);
 
     return res.json({ board: updated });
 }

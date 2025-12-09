@@ -22,7 +22,7 @@ async function createWorkspace(req, res) {
             }
         });
         // Tạo thành viên Owner
-        await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'owner', joinedAt: new Date() } });
+        await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'OWNER', joinedAt: new Date() } });
         return workspace;
     });
 
@@ -54,7 +54,7 @@ async function updateWorkspace(req, res) {
     const member = await prisma.workspaceMember.findFirst({
         where: { workspaceId, userId: req.user.id }
     });
-    if (!member || !['owner', 'admin'].includes(member.role)) {
+    if (!member || !['OWNER', 'LEADER'].includes(member.role.toUpperCase())) {
         return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
@@ -68,7 +68,25 @@ async function updateWorkspace(req, res) {
         data: updateData
     });
 
-    // Log activity (Tùy chọn)
+    const clientInfo = getClientInfo(req);
+    const metadata = {};
+    if (name !== undefined && name !== workspace.name) metadata.oldName = workspace.name;
+    if (description !== undefined && description !== workspace.description) metadata.oldDescription = workspace.description;
+    if (visibility !== undefined && visibility !== workspace.visibility) metadata.oldVisibility = workspace.visibility;
+    
+    // Only log if something actually changed
+    if (Object.keys(metadata).length > 0) {
+        await logActivity({
+            userId: req.user.id,
+            action: 'updated_workspace_details',
+            entityType: 'Workspace',
+            entityId: updated.id,
+            entityName: updated.name,
+            workspaceId: updated.id,
+            metadata: metadata,
+            ...clientInfo
+        });
+    }
 
     res.json({ workspace: updated });
 }
@@ -82,8 +100,15 @@ async function deleteWorkspace(req, res) {
     const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    if (workspace.ownerId !== req.user.id) {
-        return res.status(403).json({ error: 'Only workspace owner can delete workspace' });
+    const member = await prisma.workspaceMember.findFirst({
+        where: {
+            workspaceId,
+            userId: req.user.id,
+        },
+    });
+
+    if (!member || !['OWNER', 'LEADER'].includes(member.role)) {
+        return res.status(403).json({ error: 'Only workspace owner or leader can delete the workspace' });
     }
 
     // Lấy danh sách thành viên trước khi xóa
@@ -108,9 +133,18 @@ async function deleteWorkspace(req, res) {
         }
     }
 
-    // Log activity (Tùy chọn)
-
     res.json({ success: true, message: 'Workspace deleted successfully' });
+
+    const clientInfo = getClientInfo(req);
+    await logActivity({
+        userId: req.user.id,
+        action: 'deleted_workspace',
+        entityType: 'Workspace',
+        entityId: workspace.id,
+        entityName: workspace.name,
+        workspaceId: workspace.id,
+        ...clientInfo
+    });
 }
 
 
@@ -211,6 +245,7 @@ async function inviteMember(req, res) {
     const parsed = inviteMemberSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const { email, role = 'member' } = parsed.data;
+    const roleUpper = role.toUpperCase();
 
     const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -218,8 +253,32 @@ async function inviteMember(req, res) {
     const currentMember = await prisma.workspaceMember.findFirst({
         where: { workspaceId, userId: req.user.id }
     });
-    if (!currentMember || !['owner', 'admin'].includes(currentMember.role)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+    if (!currentMember) {
+        return res.status(403).json({ error: 'You are not a member of this workspace.' });
+    }
+
+    // --- New, Stricter Permission Checks ---
+    if (currentMember.role === 'OWNER') {
+        const leaderCount = await prisma.workspaceMember.count({
+            where: { workspaceId, role: 'LEADER' }
+        });
+
+        if (leaderCount > 0) {
+            if (roleUpper !== 'MEMBER') {
+                return res.status(400).json({ error: 'A leader already exists. You can only invite new users as "MEMBER".' });
+            }
+        } else { // No leader exists yet
+            if (roleUpper !== 'LEADER' && roleUpper !== 'MEMBER') {
+                return res.status(400).json({ error: 'You may invite one person as "LEADER", otherwise the role must be "MEMBER".' });
+            }
+        }
+
+    } else if (currentMember.role === 'LEADER') {
+        if (roleUpper !== 'MEMBER') {
+            return res.status(403).json({ error: 'As a Leader, you can only invite users with the "MEMBER" role.' });
+        }
+    } else {
+        return res.status(403).json({ error: 'Only owner or leader can invite members' });
     }
 
     // Check workspace plan and limit members if it's a FREE plan
@@ -264,7 +323,7 @@ async function inviteMember(req, res) {
         data: {
             workspaceId,
             email,
-            role,
+            role: roleUpper,
             invitedById: req.user.id,
             expiresAt
         }
@@ -389,20 +448,18 @@ async function removeMember(req, res) {
     const currentMember = await prisma.workspaceMember.findFirst({
         where: { workspaceId, userId: req.user.id }
     });
-    if (!currentMember || !['owner', 'admin'].includes(currentMember.role)) {
+    if (!currentMember || !['OWNER', 'LEADER'].includes(currentMember.role)) {
         return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     if (workspace.ownerId === userId) return res.status(400).json({ error: 'Cannot remove workspace owner' });
     if (req.user.id === userId) return res.status(400).json({ error: 'Cannot remove yourself' });
 
-    const targetMember = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId } });
+    const targetMember = await prisma.workspaceMember.findFirst({
+        where: { workspaceId, userId },
+        include: { user: { select: { fullName: true, email: true } } }
+    });
     if (!targetMember) return res.status(404).json({ error: 'Member not found' });
-
-    // Admin không thể tự ý xóa Admin khác
-    if (currentMember.role === 'admin' && targetMember.role === 'admin') {
-        return res.status(400).json({ error: 'Permission denied: Admin cannot remove another admin' });
-    }
 
     await prisma.workspaceMember.delete({ where: { id: targetMember.id } });
 
@@ -411,6 +468,21 @@ async function removeMember(req, res) {
         removedMemberId: userId,
         workspaceName: workspace.name,
         removerName: req.user.fullName
+    });
+
+    const clientInfo = getClientInfo(req);
+    await logActivity({
+        userId: req.user.id,
+        action: 'removed_member',
+        entityType: 'WorkspaceMember',
+        entityId: targetMember.id,
+        entityName: targetMember.user.fullName,
+        workspaceId: workspace.id,
+        metadata: {
+            removedUserId: userId,
+            removedUserEmail: targetMember.user.email
+        },
+        ...clientInfo
     });
 
     res.json({ message: 'Member removed successfully' });
@@ -435,6 +507,21 @@ async function leaveWorkspace(req, res) {
 
     await prisma.workspaceMember.delete({ where: { id: member.id } });
 
+    const clientInfo = getClientInfo(req);
+    await logActivity({
+        userId: req.user.id,
+        action: 'left_workspace',
+        entityType: 'Workspace',
+        entityId: workspace.id,
+        entityName: workspace.name,
+        workspaceId: workspace.id,
+        metadata: {
+            memberId: member.id,
+            memberEmail: req.user.email
+        },
+        ...clientInfo
+    });
+
     res.json({ message: 'Left workspace successfully' });
 }
 
@@ -445,34 +532,78 @@ async function updateMemberRole(req, res) {
     const parsed = updateMemberRoleSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const { role } = parsed.data;
+    const roleUpper = role.toUpperCase();
 
-    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
-    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
-
-    const currentMember = await prisma.workspaceMember.findFirst({
-        where: { workspaceId, userId: req.user.id }
-    });
-    if (!currentMember || !['owner', 'admin'].includes(currentMember.role)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+    if (roleUpper === 'OWNER') {
+        return res.status(400).json({ error: 'Cannot assign another owner' });
     }
 
-    if (workspace.ownerId === userId) return res.status(400).json({ error: 'Cannot change workspace owner role' });
+    const [currentMember, targetMember] = await Promise.all([
+        prisma.workspaceMember.findFirst({ where: { workspaceId, userId: req.user.id } }),
+        prisma.workspaceMember.findFirst({
+            where: { workspaceId, userId },
+            include: { user: { select: { fullName: true, email: true } } }
+        })
+    ]);
 
-    const targetMember = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId } });
+    if (!currentMember) return res.status(403).json({ error: 'You are not a member of this workspace.' });
     if (!targetMember) return res.status(404).json({ error: 'Member not found' });
 
-    // Kiểm tra quyền: Admin không được đổi vai trò Admin khác
-    if (currentMember.role === 'admin' && targetMember.role === 'admin') {
-        return res.status(400).json({ error: 'Admin cannot change another admin role' });
+    if (!['OWNER', 'LEADER'].includes(currentMember.role)) {
+        return res.status(403).json({ error: 'Only owner or leader can change member roles' });
     }
-    // Kiểm tra quyền: Owner không được hạ cấp chính mình (ngay cả khi ownerId !== userId)
-    if (currentMember.role === 'owner' && targetMember.userId === currentMember.userId) {
-        return res.status(400).json({ error: 'Owner cannot change their own role' });
+
+    if (targetMember.role === 'OWNER') {
+        return res.status(400).json({ error: 'Cannot change workspace owner role' });
+    }
+
+    // --- Role-specific restrictions ---
+
+    if (currentMember.role === 'LEADER') {
+        // Leaders can't assign Leader role or change their own role.
+        if (roleUpper === 'LEADER' || targetMember.userId === currentMember.userId) {
+            return res.status(403).json({ error: 'Permission denied. Leaders cannot assign the Leader role or change their own role.' });
+        }
+    }
+
+    // --- Check for existing Leader when assigning the role ---
+    if (roleUpper === 'LEADER') {
+        // This action is reserved for Owners.
+        if (currentMember.role !== 'OWNER') {
+            return res.status(403).json({ error: 'Permission denied: Only an owner can assign the LEADER role.' });
+        }
+
+        const existingLeader = await prisma.workspaceMember.findFirst({
+            where: {
+                workspaceId,
+                role: 'LEADER',
+                userId: { not: userId }
+            }
+        });
+        if (existingLeader) {
+            return res.status(400).json({ error: 'A leader already exists in this workspace. Please demote the existing leader first.' });
+        }
     }
 
     const updated = await prisma.workspaceMember.update({
         where: { id: targetMember.id },
-        data: { role }
+        data: { role: roleUpper }
+    });
+
+    const clientInfo = getClientInfo(req);
+    await logActivity({
+        userId: req.user.id,
+        action: 'updated_member_role',
+        entityType: 'WorkspaceMember',
+        entityId: updated.id,
+        entityName: targetMember.user.fullName,
+        workspaceId: workspaceId,
+        metadata: {
+            targetUserId: userId,
+            oldRole: targetMember.role,
+            newRole: roleUpper
+        },
+        ...clientInfo
     });
 
     res.json({ member: updated });

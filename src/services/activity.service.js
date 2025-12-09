@@ -28,6 +28,13 @@ async function logActivity({ userId, action, entityType = null, entityId = null,
     });
 }
 
+function getClientInfo(req) {
+    const ipAddress = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || req.connection?.socket?.remoteAddress || null;
+    const userAgent = req.get('User-Agent') || null;
+    return { ipAddress, userAgent };
+}
+
 module.exports = {
-    logActivity
+    logActivity,
+    getClientInfo
 };

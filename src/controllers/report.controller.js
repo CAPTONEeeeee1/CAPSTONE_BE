@@ -17,7 +17,7 @@ async function getWorkspaceReport(req, res) {
         where: { workspaceId, userId: req.user.id }
     });
 
-    if (!member || !['owner', 'admin'].includes(member.role)) {
+    if (!member || !['OWNER', 'LEADER'].includes(member.role)) {
         return res.status(403).json({ error: 'Only workspace owner/admin can view reports' });
     }
 
@@ -186,7 +186,7 @@ async function getWorkspaceActivityTimeline(req, res) {
         where: { workspaceId, userId: req.user.id }
     });
 
-    if (!member || !['owner', 'admin'].includes(member.role)) {
+    if (!member || !['OWNER', 'LEADER'].includes(member.role)) {
         return res.status(403).json({ error: 'Only workspace owner/admin can view timeline' });
     }
 
@@ -352,42 +352,59 @@ async function getReportsOverview(req, res) {
     ],
   };
 
-  const userWorkspaces = await prisma.workspace.findMany({
-    where: workspaceFilter,
-    select: { id: true },
-  });
-  const workspaceIds = userWorkspaces.map(ws => ws.id);
-
-  const [
-    totalWorkspaces,
-    totalCards,
-    completedCards,
-    totalMembers,
-    recentActivities,
-    topPerformers,
-  ] = await Promise.all([
-    prisma.workspace.count({ where: workspaceFilter }),
-    prisma.card.count({ where: { board: { workspaceId: { in: workspaceIds } } } }),
-    prisma.card.count({
-      where: {
-        list: { isDone: true },
-        board: { workspaceId: { in: workspaceIds } },
-      },
-    }),
-    prisma.workspaceMember.count({ where: { workspaceId: { in: workspaceIds } } }),
-    prisma.activityLog.findMany({
-      where: {
-        user: {
-          workspaceMemberships: { some: { workspaceId: { in: workspaceIds } } },
+      const userWorkspaces = await prisma.workspace.findMany({
+        where: workspaceFilter,
+        select: { id: true },
+      });
+      const workspaceIds = userWorkspaces.map(ws => ws.id);
+  
+      // Fetch accessible board IDs within the user's workspaces
+      const accessibleBoards = await prisma.board.findMany({
+          where: { workspaceId: { in: workspaceIds } },
+          select: { id: true }
+      });
+      const accessibleBoardIds = accessibleBoards.map(b => b.id);
+  
+      // Fetch accessible card IDs within those boards
+      const accessibleCards = await prisma.card.findMany({
+          where: { boardId: { in: accessibleBoardIds } },
+          select: { id: true }
+      });
+      const accessibleCardIds = accessibleCards.map(c => c.id);
+  
+      const activityWhere = {
+          OR: [
+              { entityType: 'workspace', entityId: { in: workspaceIds } },
+              { entityType: 'board', entityId: { in: accessibleBoardIds } },
+              { entityType: 'card', entityId: { in: accessibleCardIds } }
+          ]
+      };
+  
+      const [
+      totalWorkspaces,
+      totalCards,
+      completedCards,
+      totalMembers,
+      recentActivities,
+      topPerformers,
+    ] = await Promise.all([
+      prisma.workspace.count({ where: workspaceFilter }),
+      prisma.card.count({ where: { board: { workspaceId: { in: workspaceIds } } } }),
+      prisma.card.count({
+        where: {
+          list: { isDone: true },
+          board: { workspaceId: { in: workspaceIds } },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      include: {
-        user: { select: { id: true, fullName: true, avatar: true } },
-      },
-    }),
-    prisma.card.groupBy({
+      }),
+      prisma.workspaceMember.count({ where: { workspaceId: { in: workspaceIds } } }),
+      prisma.activityLog.findMany({
+        where: activityWhere,
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          user: { select: { id: true, fullName: true, avatar: true } },
+        },
+      }),    prisma.card.groupBy({
       by: ['createdById'],
       where: {
         board: { workspaceId: { in: workspaceIds } },

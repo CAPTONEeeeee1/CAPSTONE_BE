@@ -1,5 +1,6 @@
 const { prisma } = require('../shared/prisma');
 const { createCommentSchema, updateCommentSchema } = require('../validators/comment.validators');
+const { logActivity } = require('../services/activity.service');
 
 /**
  * Hàm hỗ trợ kiểm tra quyền truy cập Workspace (Từ Code 2)
@@ -77,6 +78,21 @@ async function addComment(req, res) {
     // Tùy chọn: Gửi thông báo cho reporter/assignee
 
     res.status(201).json({ comment: c });
+
+    // Log activity
+    await logActivity({
+        userId: req.user.id,
+        workspaceId: board.workspaceId,
+        boardId: card.boardId,
+        action: 'added_comment',
+        entityType: 'Comment',
+        entityId: c.id,
+        entityName: c.bodyMd.substring(0, 50) + (c.bodyMd.length > 50 ? '...' : ''),
+        metadata: {
+            cardId: cardId,
+            commentBody: c.bodyMd
+        }
+    }, req);
 }
 
 
@@ -92,6 +108,34 @@ async function updateComment(req, res) {
     if (c.authorId !== req.user.id) return res.status(403).json({ error: 'Not the author' });
 
     const updated = await prisma.comment.update({ where: { id: commentId }, data: { bodyMd: parsed.data.bodyMd } });
+    
+    // Fetch card and board details for logging
+    const card = await prisma.card.findUnique({
+        where: { id: c.cardId },
+        select: { boardId: true }
+    });
+    const board = await prisma.board.findUnique({
+        where: { id: card.boardId },
+        select: { workspaceId: true }
+    });
+
+    // Log activity
+    if (card && board) {
+        await logActivity({
+            userId: req.user.id,
+            workspaceId: board.workspaceId,
+            boardId: card.boardId,
+            action: 'updated_comment',
+            entityType: 'Comment',
+            entityId: updated.id,
+            entityName: updated.bodyMd.substring(0, 50) + (updated.bodyMd.length > 50 ? '...' : ''),
+            metadata: {
+                oldCommentBody: c.bodyMd,
+                newCommentBody: updated.bodyMd
+            }
+        }, req);
+    }
+    
     res.json({ comment: updated });
 }
 
@@ -108,12 +152,58 @@ async function deleteComment(req, res) {
         
         const { workspaceMember } = await checkWorkspaceAccess(card.boardId, req.user.id);
 
-        if (!workspaceMember || !['owner', 'admin'].includes(workspaceMember.role)) {
+        if (!workspaceMember || !['OWNER', 'LEADER'].includes(workspaceMember.role)) {
             return res.status(403).json({ error: 'Permission denied. Only the author or workspace owner/admin can delete.' });
         }
     }
 
     await prisma.comment.delete({ where: { id: commentId } });
+    
+    // Log activity
+    if (card) { // card is already defined if not the author
+        const board = await prisma.board.findUnique({
+            where: { id: card.boardId },
+            select: { workspaceId: true }
+        });
+
+        if (board) {
+            await logActivity({
+                userId: req.user.id,
+                workspaceId: board.workspaceId,
+                boardId: card.boardId,
+                action: 'deleted_comment',
+                entityType: 'Comment',
+                entityId: c.id,
+                entityName: c.bodyMd.substring(0, 50) + (c.bodyMd.length > 50 ? '...' : ''),
+                metadata: {
+                    commentBody: c.bodyMd
+                }
+            }, req);
+        }
+    } else { // If the author deletes their own comment, card is not defined yet, fetch it
+        const originalCard = await prisma.card.findUnique({ where: { id: c.cardId }, select: { boardId: true } });
+        if (originalCard) {
+            const board = await prisma.board.findUnique({
+                where: { id: originalCard.boardId },
+                select: { workspaceId: true }
+            });
+            if (board) {
+                await logActivity({
+                    userId: req.user.id,
+                    workspaceId: board.workspaceId,
+                    boardId: originalCard.boardId,
+                    action: 'deleted_comment',
+                    entityType: 'Comment',
+                    entityId: c.id,
+                    entityName: c.bodyMd.substring(0, 50) + (c.bodyMd.length > 50 ? '...' : ''),
+                    metadata: {
+                        commentBody: c.bodyMd
+                    }
+                }, req);
+            }
+        }
+    }
+
     res.json({ success: true, message: 'Comment deleted successfully' });
 }
 

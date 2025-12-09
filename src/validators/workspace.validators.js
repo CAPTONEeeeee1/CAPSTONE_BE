@@ -12,8 +12,8 @@ const createWorkspaceSchema = z.object({
 // Schema để mời thành viên
 const inviteMemberSchema = z.object({
     email: z.string().email('Email không hợp lệ.'),
-    role: z.enum(['admin', 'member', 'guest'], {
-        message: "Role phải là 'admin', 'member', hoặc 'guest'."
+    role: z.enum(['leader', 'member', 'guest'], {
+        message: "Role phải là 'leader', 'member', hoặc 'guest'."
     }).optional()
 });
 
@@ -28,8 +28,8 @@ const updateWorkspaceSchema = z.object({
 
 // Schema để cập nhật vai trò của thành viên trong Workspace
 const updateMemberRoleSchema = z.object({
-    role: z.enum(['admin', 'member', 'guest'], {
-        message: "Role phải là 'admin', 'member', hoặc 'guest'."
+    role: z.enum(['leader', 'member', 'guest'], {
+        message: "Role phải là 'leader', 'member', hoặc 'guest'."
     })
 });
 

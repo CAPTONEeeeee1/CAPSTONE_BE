@@ -16,7 +16,7 @@ async function getTrashedBoards(req, res) {
         }
 
         // Only owner and admin can view trash
-        if (!['owner', 'admin'].includes(member.role)) {
+        if (!['OWNER', 'LEADER'].includes(member.role)) {
             return res.status(403).json({ error: 'Only workspace owner and admin can view trash' });
         }
 
@@ -72,7 +72,7 @@ async function restoreBoard(req, res) {
             return res.status(403).json({ error: 'Not a workspace member' });
         }
 
-        if (!['owner', 'admin'].includes(member.role)) {
+        if (!['OWNER', 'LEADER'].includes(member.role)) {
             return res.status(403).json({ error: 'Only workspace owner and admin can restore boards' });
         }
 
@@ -118,7 +118,7 @@ async function permanentlyDeleteBoard(req, res) {
             return res.status(403).json({ error: 'Not a workspace member' });
         }
 
-        if (!['owner', 'admin'].includes(member.role)) {
+        if (!['OWNER', 'LEADER'].includes(member.role)) {
             return res.status(403).json({ error: 'Only workspace owner and admin can permanently delete boards' });
         }
 
@@ -321,7 +321,7 @@ async function permanentlyDeleteCard(req, res) {
             return res.status(403).json({ error: 'Not a workspace member' });
         }
 
-        if (!['owner', 'admin', 'member'].includes(member.role)) {
+        if (!['OWNER', 'LEADER', 'MEMBER'].includes(member.role)) {
             return res.status(403).json({ error: 'Insufficient permissions' });
         }
 

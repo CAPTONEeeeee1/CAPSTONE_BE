@@ -17,7 +17,7 @@ async function getMyActivityLogs(req, res) {
     const { page = 1, limit = 50, action, entityType, startDate, endDate, workspaceId } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = { userId: req.user.id };
+    const where = {};
     
     if (action) where.action = action;
     if (entityType) where.entityType = entityType;
@@ -28,37 +28,76 @@ async function getMyActivityLogs(req, res) {
         if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    // Filter by workspace scope
-    if (workspaceId) {
-        // Verify user is member of this workspace
-        const member = await prisma.workspaceMember.findFirst({
-            where: { workspaceId, userId: req.user.id }
-        });
+    // Get all workspace IDs where the current user is a member
+    const userMemberships = await prisma.workspaceMember.findMany({
+        where: { userId: req.user.id },
+        select: { workspaceId: true }
+    });
+    const accessibleWorkspaceIds = userMemberships.map(m => m.workspaceId);
 
-        if (!member) {
+    if (accessibleWorkspaceIds.length === 0) {
+        // If the user is not a member of any workspace, return no activities.
+        // This is important to prevent accidental exposure of activities.
+        res.json({
+            logs: [],
+            pagination: {
+                total: 0,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: 0
+            }
+        });
+        return;
+    }
+
+    // Get all board IDs within the accessible workspaces
+    const accessibleBoards = await prisma.board.findMany({
+        where: { workspaceId: { in: accessibleWorkspaceIds } },
+        select: { id: true }
+    });
+    const accessibleBoardIds = accessibleBoards.map(b => b.id);
+
+    // Get all card IDs within the accessible boards
+    const accessibleCards = await prisma.card.findMany({
+        where: { boardId: { in: accessibleBoardIds } },
+        select: { id: true }
+    });
+    const accessibleCardIds = accessibleCards.map(c => c.id);
+
+    let finalAccessibleWorkspaceIds = accessibleWorkspaceIds;
+    let finalAccessibleBoardIds = accessibleBoardIds;
+    let finalAccessibleCardIds = accessibleCardIds;
+
+    // If a specific workspaceId is provided, further restrict the results to that workspace
+    if (workspaceId) {
+        if (!accessibleWorkspaceIds.includes(workspaceId)) {
             return res.status(403).json({ error: 'You are not a member of this workspace' });
         }
+        
+        finalAccessibleWorkspaceIds = [workspaceId];
 
-        // Get boards and cards in this workspace
-        const boards = await prisma.board.findMany({
-            where: { workspaceId },
+        // Get boards only within the specified workspace
+        const specificWorkspaceBoards = await prisma.board.findMany({
+            where: { workspaceId: workspaceId },
             select: { id: true }
         });
-        const boardIds = boards.map(b => b.id);
+        finalAccessibleBoardIds = specificWorkspaceBoards.map(b => b.id);
 
-        const cards = await prisma.card.findMany({
-            where: { boardId: { in: boardIds } },
+        // Get cards only within the specified workspace's boards
+        const specificWorkspaceCards = await prisma.card.findMany({
+            where: { boardId: { in: finalAccessibleBoardIds } },
             select: { id: true }
         });
-        const cardIds = cards.map(c => c.id);
-
-        // Filter activities within workspace scope
-        where.OR = [
-            { entityType: 'workspace', entityId: workspaceId },
-            { entityType: 'board', entityId: { in: boardIds } },
-            { entityType: 'card', entityId: { in: cardIds } }
-        ];
+        finalAccessibleCardIds = specificWorkspaceCards.map(c => c.id);
     }
+    
+    // Apply the workspace, board, and card filtering
+    where.OR = [
+        { entityType: 'workspace', entityId: { in: finalAccessibleWorkspaceIds } },
+        { entityType: 'board', entityId: { in: finalAccessibleBoardIds } },
+        { entityType: 'card', entityId: { in: finalAccessibleCardIds } }
+    ];
+
 
     const [logs, total] = await Promise.all([
         prisma.activityLog.findMany({
@@ -191,7 +230,7 @@ async function getWorkspaceActivities(req, res) {
         return res.status(403).json({ error: 'You are not a member of this workspace' });
     }
 
-    const isAdmin = currentUserMember.role === 'owner' || currentUserMember.role === 'admin';
+    const isAdmin = ['OWNER', 'LEADER'].includes(currentUserMember.role);
 
     const boards = await prisma.board.findMany({
         where: { workspaceId },
@@ -220,10 +259,12 @@ async function getWorkspaceActivities(req, res) {
     });
     where.OR[2].entityId.in = cards.map(c => c.id);
 
-    if (!isAdmin) {
-        where.userId = req.user.id;
-    } else if (userId) {
+    // If a specific userId is requested, filter by that userId.
+    // Otherwise, all members of the workspace can see all activities of all members within that workspace.
+    if (userId) {
         where.userId = userId;
+    } else {
+        where.userId = { in: memberUserIds }; // Allow all members of the workspace to see activities
     }
 
     if (action) where.action = action;
@@ -291,11 +332,9 @@ async function getWorkspaceMemberActivities(req, res) {
         return res.status(403).json({ error: 'You are not a member of this workspace' });
     }
 
-    const isAdmin = currentUserMember.role === 'owner' || currentUserMember.role === 'admin';
+    const isAdmin = ['OWNER', 'LEADER'].includes(currentUserMember.role);
 
-    if (!isAdmin && userId !== req.user.id) {
-        return res.status(403).json({ error: 'You can only view your own activities' });
-    }
+
 
     const targetMember = await prisma.workspaceMember.findFirst({
         where: { workspaceId, userId },

@@ -65,8 +65,8 @@ async function createCard(req, res) {
 
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
     // Tùy chọn: Ràng buộc quyền tạo card (Từ Code 2)
-    if (!['owner', 'admin', 'member'].includes(workspaceMember.role)) { // Giữ 'member' nếu muốn tất cả thành viên tạo được
-        return res.status(403).json({ error: 'Only workspace owners, admins, and members can create cards' });
+    if (!['OWNER', 'LEADER', 'MEMBER'].includes(workspaceMember.role)) {
+        return res.status(403).json({ error: 'Only workspace owners, leaders, and members can create cards' });
     }
 
     // Lấy max values (orderIdx, keySeq) song song (Tối ưu từ Code 2)
@@ -553,7 +553,7 @@ async function deleteAttachment(req, res) {
     if (!attachment) return res.status(404).json({ error: 'Attachment not found' });
 
     // Giả định `member` là thông tin của người dùng hiện tại (workspaceMember)
-    if (attachment.uploadedById !== req.user.id && !['admin', 'owner'].includes(workspaceMember.role)) { // Đã sửa 'maintainer' thành 'owner'
+    if (attachment.uploadedById !== req.user.id && !['OWNER', 'LEADER'].includes(workspaceMember.role)) { // Đã sửa 'maintainer' thành 'owner'
         return res.status(403).json({ error: 'Permission denied: Only uploader, owner, or admin can delete' });
     }
 
