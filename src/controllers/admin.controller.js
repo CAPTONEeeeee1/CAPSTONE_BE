@@ -1,6 +1,5 @@
 const { prisma } = require('../shared/prisma');
 const { logActivity, getClientInfo } = require('../services/activity.service');
-const { sendEmail, getUserSuspendedEmailTemplate } = require('../services/email.service');
 
 // --- Lấy danh sách người dùng ---
 async function getAllUsers(req, res) {
@@ -108,15 +107,6 @@ async function updateUserStatus(req, res) {
     metadata: { oldStatus: user.status, newStatus: status },
     ...clientInfo,
   });
-
-  if (status === 'suspended') {
-    const emailHtml = getUserSuspendedEmailTemplate(user.fullName);
-    await sendEmail({
-      to: user.email,
-      subject: 'Tài khoản của bạn đã bị đình chỉ',
-      html: emailHtml,
-    });
-  }
 
   res.json({ user: updated });
 }

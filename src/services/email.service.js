@@ -533,38 +533,6 @@ function getPasswordChangedEmailTemplate(fullName, changeTime, ipAddress, userAg
     `;
 }
 
-/**
- * Template Email: Tài khoản bị đình chỉ
- */
-function getUserSuspendedEmailTemplate(userName) {
-    return `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
-                .alert-box { background: #f8d7da; color: #721c24; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }
-                .footer { margin-top: 20px; font-size: 12px; color: #777; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>️Tài khoản của bạn đã bị đình chỉ</h2>
-                <div class="alert-box">
-                    <p>Xin chào <strong>${userName}</strong>,</p>
-                    <p>Tài khoản của bạn tại PlanNex đã bị đình chỉ do vi phạm chính sách của chúng tôi. Bạn sẽ không thể đăng nhập vào tài khoản của mình.</p>
-                    <p>Nếu bạn cho rằng đây là một sự nhầm lẫn, vui lòng liên hệ với bộ phận hỗ trợ của chúng tôi.</p>
-                </div>
-                <div class="footer">
-                    <p>Email này được gửi từ PlanNex.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-    `;
-}
-
 
 module.exports = {
     sendEmail,
@@ -577,6 +545,5 @@ module.exports = {
     getWorkspaceDeletedEmailTemplate,
     getBoardCreatedEmailTemplate,
     getBoardDeletedEmailTemplate,
-    getMemberRemovedEmailTemplate,
-    getUserSuspendedEmailTemplate
+    getMemberRemovedEmailTemplate
 };

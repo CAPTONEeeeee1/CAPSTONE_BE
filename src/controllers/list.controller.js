@@ -29,9 +29,9 @@ async function createList(req, res) {
     if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
     }
-    const { boardId, name, isDone } = parsed.data;
+    const { boardId, name } = parsed.data;
 
-    // Kiểm tra quyền truy cập Workspace
+    // Kiểm tra quyền truy cập Workspace (Từ Code 2)
     const { board, workspaceMember } = await checkWorkspaceAccess(boardId, req.user.id);
     if (!board) {
         return res.status(404).json({ error: 'Không tìm thấy bảng' });
@@ -40,40 +40,17 @@ async function createList(req, res) {
         return res.status(403).json({ error: 'Bạn không phải thành viên của workspace' });
     }
 
-    // Kiểm tra xem có danh sách nào có cùng tên trên bảng này chưa
-    const existingList = await prisma.list.findFirst({
-        where: {
-            boardId,
-            name: {
-                equals: name,
-                mode: 'insensitive' // So sánh không phân biệt chữ hoa chữ thường
-            }
-        }
-    });
-
-    if (existingList) {
-        return res.status(409).json({ error: 'Đã có tên trùng lặp, vui lòng đổi tên khác.' });
-    }
-
-    // Lấy orderIdx lớn nhất
-    const maxOrder = await prisma.list.aggregate({
+    const max = await prisma.list.aggregate({
         where: { boardId },
         _max: { orderIdx: true }
     });
+    const orderIdx = (max._max.orderIdx ?? -1) + 1;
 
-    const orderIdx = (maxOrder._max.orderIdx ?? -1) + 1;
-
-    // Tạo danh sách mới
     const list = await prisma.list.create({
-        data: {
-            boardId,
-            name,
-            orderIdx,
-            isDone: isDone ?? false
-        }
+        data: { boardId, name, orderIdx }
     });
 
-    // Log activity
+    // Log activity (Từ Code 2)
     logActivity(req, {
         action: 'list_create',
         entityType: 'list',
@@ -85,8 +62,8 @@ async function createList(req, res) {
             workspaceId: board.workspaceId
         }
     });
-    
-    res.status(201).json({ list: { ...list, cards: [] } });
+
+    res.status(201).json({ list });
 }
 
 
@@ -156,7 +133,7 @@ async function updateList(req, res) {
         data: updateData
     });
 
-
+    // Log activity (Từ Code 2)
     const changes = [];
     if (name !== undefined && name !== list.name) changes.push('name');
     if (orderIdx !== undefined && orderIdx !== list.orderIdx) changes.push('order');
@@ -184,6 +161,7 @@ async function updateList(req, res) {
 // --- DELETE LIST ---
 
 async function deleteList(req, res) {
+    // Dùng validator chi tiết từ Code 2 để xử lý moveToListId
     const parsed = deleteListSchema.safeParse({ ...req.params, ...req.query });
     if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });

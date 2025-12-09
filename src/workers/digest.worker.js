@@ -9,7 +9,7 @@ const { sendEmail } = require('../services/email.service');
  * @returns {string} The HTML string for the email body.
  */
 function getDigestEmailTemplate(userName, notifications) {
-  const notificationItems = notifications.map(n => 
+  const notificationItems = notifications.map(n =>
     `<li>
       <strong>${n.title}</strong>: ${n.message}
       <br>
@@ -54,7 +54,6 @@ function getDigestEmailTemplate(userName, notifications) {
  * @returns {boolean}
  */
 function isTimeToSend(frequency, lastSentAt, now) {
-  console.log(`[Digest Worker - isTimeToSend] Checking for frequency: ${frequency}, lastSentAt: ${lastSentAt}, now: ${now}`);
   if (!lastSentAt) {
     return true; // Send immediately if it's the first time.
   }
@@ -78,10 +77,8 @@ function isTimeToSend(frequency, lastSentAt, now) {
  * Fetches users who need a digest, gathers their notifications, and sends emails.
  */
 async function processEmailDigests() {
-  console.log(`[Digest Worker] Running at ${new Date().toISOString()}`);
-  
   const now = new Date();
-  
+
   // 1. Find all users with email digests enabled.
   const settingsToProcess = await prisma.notificationSetting.findMany({
     where: {
@@ -92,8 +89,6 @@ async function processEmailDigests() {
       user: true,
     },
   });
-
-  console.log(`[Digest Worker] Found ${settingsToProcess.length} users with digests enabled.`);
 
   for (const settings of settingsToProcess) {
     const { user, emailDigestFrequency, lastDigestSentAt } = settings;
@@ -134,7 +129,7 @@ async function processEmailDigests() {
 
       // 5. Update the database after successful sending.
       const notificationIds = newNotifications.map(n => n.id);
-      
+
       await prisma.$transaction([
         // Mark notifications as emailed
         prisma.notification.updateMany({

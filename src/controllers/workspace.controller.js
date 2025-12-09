@@ -2,6 +2,7 @@ const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
 const { createNotification, sendWorkspaceInvitationNotification, sendInvitationResponseNotification, sendWorkspaceDeletedNotification, sendMemberRemovedNotification } = require('../services/notification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
+const chatService = require('../services/chat.service');
 
 
 // --- CREATE WORKSPACE ---
@@ -16,15 +17,30 @@ async function createWorkspace(req, res) {
         const workspace = await tx.workspace.create({
             data: {
                 name,
-                description: description ?? null, // Đảm bảo description là optional và có thể null
+                description: description ?? null,
                 visibility,
                 ownerId: req.user.id
             }
         });
         // Tạo thành viên Owner
         await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'owner', joinedAt: new Date() } });
+        
+        // Tạo chat room cho workspace
+        await tx.workspaceChat.create({
+            data: {
+                workspaceId: workspace.id,
+                name: `${name} - Chat`
+            }
+        });
+        
         return workspace;
     });
+
+    // Thêm owner vào chat room
+    const chat = await prisma.workspaceChat.findUnique({ where: { workspaceId: ws.id } });
+    if (chat) {
+        await chatService.addChatMember(chat.id, req.user.id);
+    }
 
     const clientInfo = getClientInfo(req);
     logActivity({
@@ -121,13 +137,7 @@ async function listMyWorkspaces(req, res) {
     const workspaces = await prisma.workspace.findMany({
         where: { members: { some: { userId } } },
         orderBy: { createdAt: 'desc' },
-        select: {
-            id: true,
-            name: true,
-            description: true,
-            plan: true,
-            visibility: true,
-            createdAt: true,
+        include: {
             _count: {
                 select: { members: true, boards: true },
             },
@@ -222,19 +232,6 @@ async function inviteMember(req, res) {
         return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
-    // Check workspace plan and limit members if it's a FREE plan
-    if (workspace.plan === 'FREE') {
-        const memberCount = await prisma.workspaceMember.count({
-            where: { workspaceId: workspaceId },
-        });
-
-        if (memberCount >= 5) {
-            return res.status(403).json({
-                error: 'Free plan is limited to 5 members. Please upgrade to invite more.',
-            });
-        }
-    }
-
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -318,6 +315,14 @@ async function acceptInvitation(req, res) {
             data: { status: 'accepted', respondedAt: new Date() }
         });
     });
+
+    // Thêm member vào chat room
+    const chat = await prisma.workspaceChat.findUnique({ 
+        where: { workspaceId: invitation.workspaceId } 
+    });
+    if (chat) {
+        await chatService.addChatMember(chat.id, req.user.id);
+    }
 
     sendInvitationResponseNotification({
         inviterId: invitation.invitedById,

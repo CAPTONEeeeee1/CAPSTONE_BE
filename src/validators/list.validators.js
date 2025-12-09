@@ -6,8 +6,7 @@ const createListSchema = z.object({
     name: z.string()
         .min(1, { message: 'Tên list là bắt buộc' })
         .max(100, { message: 'Tên list tối đa 100 ký tự' })
-        .trim(),
-    isDone: z.boolean().optional()
+        .trim()
 });
 
 // Schema để lấy danh sách List của một Board
