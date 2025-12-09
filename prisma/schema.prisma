@@ -4,7 +4,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  // Tối ưu hóa từ Code 2
   engineType = "binary"
   previewFeatures = ["fullTextSearchPostgres"]
   binaryTargets = ["native"]
@@ -80,6 +79,11 @@ model User {
   notificationsReceived Notification[]  @relation("NotificationReceiver")
   notificationSettings NotificationSetting[]
   activityLogs      ActivityLog[]
+  
+  // Chat relations
+  chatMessages      ChatMessage[]       @relation("ChatMessageSender")
+  chatMemberships   ChatMember[]        @relation("ChatMembership")
+  uploadedChatAttachments ChatAttachment[] @relation("ChatAttachmentUploader")
 }
 
 model RefreshToken {
@@ -110,6 +114,7 @@ model Workspace {
   invitations WorkspaceInvitation[] 
   
   boards      Board[]
+  chat        WorkspaceChat?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -424,4 +429,81 @@ model ActivityLog {
   @@index([userId, createdAt])
   @@index([action])
   @@index([entityType, entityId])
+}
+
+// =======================================================
+// === CHAT SYSTEM ===
+// =======================================================
+
+// Chat room cho mỗi workspace (1-1 relationship)
+model WorkspaceChat {
+  id          String    @id @default(cuid())
+  workspaceId String    @unique
+  name        String    // Tên chat room (mặc định là tên workspace)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   ChatMember[]
+  messages  ChatMessage[]
+  
+  @@index([workspaceId])
+}
+
+// Thành viên trong chat room
+model ChatMember {
+  id          String    @id @default(cuid())
+  chatId      String
+  userId      String
+  joinedAt    DateTime  @default(now())
+  lastReadAt  DateTime? // Thời điểm đọc tin nhắn cuối cùng để đánh dấu unread
+  
+  chat WorkspaceChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User          @relation("ChatMembership", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
+}
+
+// Tin nhắn trong chat
+model ChatMessage {
+  id          String    @id @default(cuid())
+  chatId      String
+  senderId    String
+  messageType String    @default("text") // text|image|file
+  content     String?   // Nội dung tin nhắn (text)
+  replyToId   String?   // ID của tin nhắn được reply
+  isEdited    Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  chat       WorkspaceChat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender     User             @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  attachments ChatAttachment[]
+  
+  // Self relation cho reply
+  replyTo  ChatMessage?  @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies  ChatMessage[] @relation("MessageReply")
+  
+  @@index([chatId, createdAt(sort: Desc)]) // Tối ưu query lịch sử chat theo thời gian
+  @@index([senderId])
+}
+
+// Tệp đính kèm trong chat (ảnh, file)
+model ChatAttachment {
+  id          String    @id @default(cuid())
+  messageId   String
+  fileName    String
+  fileSize    Int
+  mimeType    String
+  fileUrl     String    // Đường dẫn local file
+  uploadedById String
+  uploadedAt  DateTime  @default(now())
+  
+  message    ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploadedBy User        @relation("ChatAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  
+  @@index([messageId])
 }

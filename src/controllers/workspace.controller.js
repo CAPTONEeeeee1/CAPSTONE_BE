@@ -2,6 +2,7 @@ const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
 const { createNotification, sendWorkspaceInvitationNotification, sendInvitationResponseNotification, sendWorkspaceDeletedNotification, sendMemberRemovedNotification } = require('../services/notification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
+const chatService = require('../services/chat.service');
 
 
 // --- CREATE WORKSPACE ---
@@ -16,15 +17,30 @@ async function createWorkspace(req, res) {
         const workspace = await tx.workspace.create({
             data: {
                 name,
-                description: description ?? null, // Đảm bảo description là optional và có thể null
+                description: description ?? null,
                 visibility,
                 ownerId: req.user.id
             }
         });
         // Tạo thành viên Owner
         await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'owner', joinedAt: new Date() } });
+        
+        // Tạo chat room cho workspace
+        await tx.workspaceChat.create({
+            data: {
+                workspaceId: workspace.id,
+                name: `${name} - Chat`
+            }
+        });
+        
         return workspace;
     });
+
+    // Thêm owner vào chat room
+    const chat = await prisma.workspaceChat.findUnique({ where: { workspaceId: ws.id } });
+    if (chat) {
+        await chatService.addChatMember(chat.id, req.user.id);
+    }
 
     const clientInfo = getClientInfo(req);
     logActivity({
@@ -299,6 +315,14 @@ async function acceptInvitation(req, res) {
             data: { status: 'accepted', respondedAt: new Date() }
         });
     });
+
+    // Thêm member vào chat room
+    const chat = await prisma.workspaceChat.findUnique({ 
+        where: { workspaceId: invitation.workspaceId } 
+    });
+    if (chat) {
+        await chatService.addChatMember(chat.id, req.user.id);
+    }
 
     sendInvitationResponseNotification({
         inviterId: invitation.invitedById,

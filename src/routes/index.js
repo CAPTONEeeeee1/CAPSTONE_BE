@@ -19,6 +19,7 @@ const adminRoutes = require('./admin.route');
 const reportRoutes = require('./report.route');
 const activityRoutes = require('./activity.route');
 const settingRoutes = require('./setting.route');
+const chatRoutes = require('./chat.route');
 
 // --- Authentication & User Management ---
 router.use('/auth', authRoutes);
@@ -31,6 +32,9 @@ router.use('/cards', cardRoutes);
 router.use('/labels', labelRoutes);
 router.use('/comments', commentRoutes);
 router.use('/search', searchRoutes);
+
+// --- Chat System ---
+router.use('/chat', chatRoutes);
 
 // --- System & Administration ---
 router.use('/notifications', notificationRoutes);
