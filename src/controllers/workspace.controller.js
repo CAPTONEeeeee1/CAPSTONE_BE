@@ -475,7 +475,7 @@ async function removeMember(req, res) {
         removerId: req.user.id,
         removedMemberId: userId,
         workspaceName: workspace.name,
-        removerName: req.user.fullName
+        removerName: req.user.name
     });
 
     const clientInfo = getClientInfo(req);

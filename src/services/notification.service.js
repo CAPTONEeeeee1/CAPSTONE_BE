@@ -340,7 +340,7 @@ async function sendMemberRemovedNotification({ removerId, removedMemberId, works
         await createNotification({
             type: 'member_removed',
             title: 'Bạn đã bị xóa khỏi workspace',
-            message: `Bạn đã bị ${removerName} xóa khỏi workspace "${workspaceName}".`,
+            message: `Bạn đã bị ${removerName || 'một quản trị viên'} xóa khỏi workspace "${workspaceName}".`,
             senderId: removerId,
             receiverId: removedMemberId,
         });
