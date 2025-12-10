@@ -83,9 +83,7 @@ model User {
   // Payments
   payments          Payment[]
 
-  // Chat
-  conversations     ConversationParticipant[]
-  messagesSent      Message[]
+
 }
 
 model RefreshToken {
@@ -130,7 +128,7 @@ model Workspace {
   invitations WorkspaceInvitation[] 
   
   boards      Board[]
-  conversations Conversation[]
+
 
   payments    Payment[]
   createdAt   DateTime          @default(now())
@@ -475,45 +473,4 @@ model ActivityLog {
   @@index([userId, createdAt])
   @@index([action])
   @@index([entityType, entityId])
-}
-
-// =======================================================
-// === CHAT FEATURE ===
-// =======================================================
-
-model Conversation {
-  id          String    @id @default(cuid())
-  workspaceId String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  workspace    Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  participants ConversationParticipant[]
-  messages     Message[]
-
-  @@index([workspaceId])
-}
-
-model ConversationParticipant {
-  id             String @id @default(cuid())
-  conversationId String
-  userId         String
-
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([conversationId, userId])
-}
-
-model Message {
-  id             String    @id @default(cuid())
-  conversationId String
-  senderId       String
-  content        String
-  createdAt      DateTime  @default(now())
-
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
-
-  @@index([conversationId])
 }

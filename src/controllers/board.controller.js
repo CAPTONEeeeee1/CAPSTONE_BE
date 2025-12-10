@@ -121,7 +121,7 @@ async function createBoard(req, res) {
             workspaceId: board.workspaceId,
             boardId: board.id,
             action: 'created_board',
-            entityType: 'Board',
+                        entityType: 'board',
             entityId: board.id,
             entityName: board.name,
         }, req);
@@ -223,7 +223,7 @@ async function renameBoard(req, res) {
         workspaceId: updatedBoard.workspaceId,
         boardId: updatedBoard.id,
         action: 'renamed_board',
-        entityType: 'Board',
+                    entityType: 'board',
         entityId: updatedBoard.id,
         entityName: updatedBoard.name,
         metadata: {
@@ -266,7 +266,7 @@ async function deleteBoard(req, res) {
             workspaceId: board.workspaceId,
             boardId: board.id,
             action: 'deleted_board',
-            entityType: 'Board',
+                        entityType: 'board',
             entityId: board.id,
             entityName: board.name,
         }, req);
@@ -335,7 +335,7 @@ async function togglePinBoard(req, res) {
         workspaceId: updated.workspaceId,
         boardId: updated.id,
         action: updated.isPinned ? 'pinned_board' : 'unpinned_board',
-        entityType: 'Board',
+                    entityType: 'board',
         entityId: updated.id,
         entityName: updated.name,
     }, req);

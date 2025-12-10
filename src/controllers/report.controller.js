@@ -346,6 +346,9 @@ async function getUserDashboardReport(req, res) {
 
 async function getReportsOverview(req, res) {
   const userId = req.user.id;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10; // Default to 10 activities per page
+  const skip = (page - 1) * limit;
 
   const workspaceFilter = {
     members: {
@@ -389,6 +392,7 @@ async function getReportsOverview(req, res) {
       completedCards,
       totalMembers,
       recentActivities,
+      totalActivityCount,
       topPerformers,
     ] = await Promise.all([
       prisma.workspace.count({ where: workspaceFilter }),
@@ -403,11 +407,13 @@ async function getReportsOverview(req, res) {
       prisma.activityLog.findMany({
         where: activityWhere,
         orderBy: { createdAt: 'desc' },
-        take: 20,
+        skip: skip,
+        take: limit,
         include: {
           user: { select: { id: true, fullName: true, avatar: true } },
         },
-      }),    prisma.card.groupBy({
+      }),    prisma.activityLog.count({ where: activityWhere }),
+      prisma.card.groupBy({
       by: ['createdById'],
       where: {
         board: { workspaceId: { in: workspaceIds } },
@@ -484,6 +490,13 @@ async function getReportsOverview(req, res) {
     },
     recentActivities: enrichedActivities,
     topPerformers,
+    pagination: {
+      total: totalActivityCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalActivityCount / limit),
+      hasMore: (page * limit) < totalActivityCount,
+    }
   });
 }
 

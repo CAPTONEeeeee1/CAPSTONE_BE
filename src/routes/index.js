@@ -20,7 +20,7 @@ const reportRoutes = require('./report.route');
 const activityRoutes = require('./activity.route');
 const settingRoutes = require('./setting.route');
 const paymentRoutes = require('./payment.route'); 
-const chatRoutes = require('./chat.route');       
+       
 const trashRoutes = require('./trash.route');
 // --- Authentication & User Management ---
 router.use('/auth', authRoutes);
@@ -41,7 +41,7 @@ router.use('/reports', reportRoutes);
 router.use('/activities', activityRoutes);
 router.use('/settings', settingRoutes);
 router.use('/payment', paymentRoutes); 
-router.use('/chat', chatRoutes);       
+
 router.use('/trash', trashRoutes);     
 
 // --- 404 handler (Express 5 compatible) ---
