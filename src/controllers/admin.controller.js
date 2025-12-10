@@ -28,7 +28,6 @@ async function getAllUsers(req, res) {
         createdAt: true,
         _count: {
           select: {
-            ownedWorkspaces: true,
             workspaceMemberships: true,
           },
         },
@@ -68,7 +67,6 @@ async function getUserDetail(req, res) {
       updatedAt: true,
       _count: {
         select: {
-          ownedWorkspaces: true,
           workspaceMemberships: true,
           createdCards: true,
         },
@@ -200,9 +198,9 @@ async function deleteUser(req, res) {
   try {
     // Xóa dữ liệu liên quan
     await prisma.workspaceMembership.deleteMany({ where: { userId } });
-    await prisma.board.deleteMany({ where: { ownerId: userId } });
-    await prisma.card.deleteMany({ where: { creatorId: userId } });
-    await prisma.workspace.deleteMany({ where: { ownerId: userId } });
+    await prisma.board.deleteMany({ where: { createdById: userId } });
+    await prisma.card.deleteMany({ where: { createdById: userId } });
+    await prisma.workspace.deleteMany({ where: { members: { some: { userId: userId, role: 'OWNER' } } } });
 
     await prisma.user.delete({ where: { id: userId } });
 

@@ -6,7 +6,7 @@ async function getWorkspaceReport(req, res) {
 
     const workspace = await prisma.workspace.findUnique({
         where: { id: workspaceId },
-        select: { id: true, name: true, ownerId: true }
+        select: { id: true, name: true }
     });
 
     if (!workspace) {
@@ -175,7 +175,7 @@ async function getWorkspaceActivityTimeline(req, res) {
 
     const workspace = await prisma.workspace.findUnique({
         where: { id: workspaceId },
-        select: { id: true, ownerId: true }
+        select: { id: true }
     });
 
     if (!workspace) {
@@ -261,10 +261,11 @@ async function getUserDashboardReport(req, res) {
   const userId = req.user.id;
 
   const workspaceFilter = {
-    OR: [
-      { ownerId: userId },
-      { members: { some: { userId } } },
-    ],
+    members: {
+      some: {
+        userId,
+      },
+    },
   };
 
   const [
@@ -304,10 +305,11 @@ async function getUserDashboardReport(req, res) {
     prisma.workspaceMember.count({
       where: {
         workspace: {
-          OR: [
-            { ownerId: userId },
-            { members: { some: { userId } } },
-          ],
+          members: {
+            some: {
+              userId,
+            },
+          },
         },
       },
     }),
@@ -346,10 +348,11 @@ async function getReportsOverview(req, res) {
   const userId = req.user.id;
 
   const workspaceFilter = {
-    OR: [
-      { ownerId: userId },
-      { members: { some: { userId } } },
-    ],
+    members: {
+      some: {
+        userId,
+      },
+    },
   };
 
       const userWorkspaces = await prisma.workspace.findMany({

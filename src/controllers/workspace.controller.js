@@ -18,7 +18,6 @@ async function createWorkspace(req, res) {
                 name,
                 description: description ?? null, // Đảm bảo description là optional và có thể null
                 visibility,
-                ownerId: req.user.id
             }
         });
         // Tạo thành viên Owner
@@ -177,23 +176,29 @@ async function getWorkspaceById(req, res) {
     const userId = req.user.id;
 
     try {
-        const workspace = await prisma.workspace.findFirst({
+        const workspaceWithMembers = await prisma.workspace.findFirst({
             where: {
                 id: workspaceId,
                 members: { some: { userId: userId } }, // Kiểm tra quyền truy cập
             },
-            // Thêm include nếu cần chi tiết hơn (như _count từ listMyWorkspaces)
             include: {
                 _count: { select: { members: true, boards: true } },
-                owner: { select: { id: true, fullName: true, email: true } }
+                members: {
+                    where: { role: 'OWNER' },
+                    include: { user: { select: { id: true, fullName: true, email: true } } }
+                }
             }
         });
 
-        if (!workspace) {
+        if (!workspaceWithMembers) {
             return res.status(404).json({ error: 'Không tìm thấy workspace hoặc bạn không có quyền truy cập' });
         }
 
-        res.json({ workspace });
+        const { members, ...workspaceData } = workspaceWithMembers;
+        const owner = members.length > 0 ? members[0].user : null;
+
+
+        res.json({ workspace: { ...workspaceData, owner } });
     } catch (error) {
         console.error("Error fetching workspace by id:", error);
         res.status(500).json({ error: 'Lỗi máy chủ' });
@@ -452,7 +457,6 @@ async function removeMember(req, res) {
         return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
-    if (workspace.ownerId === userId) return res.status(400).json({ error: 'Cannot remove workspace owner' });
     if (req.user.id === userId) return res.status(400).json({ error: 'Cannot remove yourself' });
 
     const targetMember = await prisma.workspaceMember.findFirst({
@@ -460,6 +464,10 @@ async function removeMember(req, res) {
         include: { user: { select: { fullName: true, email: true } } }
     });
     if (!targetMember) return res.status(404).json({ error: 'Member not found' });
+
+    if (targetMember.role === 'OWNER') {
+        return res.status(400).json({ error: 'Cannot remove workspace owner' });
+    }
 
     await prisma.workspaceMember.delete({ where: { id: targetMember.id } });
 
@@ -496,14 +504,14 @@ async function leaveWorkspace(req, res) {
     const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    if (workspace.ownerId === req.user.id) {
-        return res.status(400).json({ error: 'Workspace owner cannot leave workspace' });
-    }
-
     const member = await prisma.workspaceMember.findFirst({
         where: { workspaceId, userId: req.user.id }
     });
     if (!member) return res.status(404).json({ error: 'You are not a member of this workspace' });
+
+    if (member.role === 'OWNER') {
+        return res.status(400).json({ error: 'Workspace owner cannot leave workspace' });
+    }
 
     await prisma.workspaceMember.delete({ where: { id: member.id } });
 

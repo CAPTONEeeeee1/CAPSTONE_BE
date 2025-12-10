@@ -92,7 +92,7 @@ async function main() {
             name: 'Demo Workspace',
             description: 'Workspace mẫu cho hệ thống quản lý task / board',
             visibility: 'private',
-            ownerId: admin.id,
+
         },
     })
 
@@ -102,7 +102,7 @@ async function main() {
             {
                 workspaceId: workspace.id,
                 userId: admin.id,
-                role: 'owner',
+                role: 'OWNER',
                 invitedAt: new Date(),
                 joinedAt: new Date(),
             },

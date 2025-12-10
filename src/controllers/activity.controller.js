@@ -214,7 +214,7 @@ async function getWorkspaceActivities(req, res) {
 
     const workspace = await prisma.workspace.findUnique({
         where: { id: workspaceId },
-        select: { id: true, name: true, ownerId: true }
+        select: { id: true, name: true }
     });
 
     if (!workspace) {
