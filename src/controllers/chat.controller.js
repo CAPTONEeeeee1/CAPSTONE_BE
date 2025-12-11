@@ -1,10 +1,10 @@
-const chatService = require('../services/chat.service');
-const { prisma } = require('../shared/prisma');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs').promises;
+const chatService = require("../services/chat.service");
+const { prisma } = require("../shared/prisma");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs").promises;
 
-const uploadDir = path.join(process.cwd(), 'uploads', 'chat');
+const uploadDir = path.join(process.cwd(), "uploads", "chat");
 
 fs.mkdir(uploadDir, { recursive: true }).catch(console.error);
 
@@ -13,7 +13,7 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
     const basename = path.basename(file.originalname, ext);
     cb(null, `${basename}-${uniqueSuffix}${ext}`);
@@ -22,24 +22,24 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedMimes = [
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain',
-    'application/zip',
-    'application/x-rar-compressed',
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+    "application/zip",
+    "application/x-rar-compressed",
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Định dạng file không được hỗ trợ'), false);
+    cb(new Error("Định dạng file không được hỗ trợ"), false);
   }
 };
 
@@ -56,26 +56,70 @@ class ChatController {
     try {
       const { workspaceId } = req.params;
 
-      const chat = await chatService.getChatByWorkspaceId(workspaceId);
+      // Check if workspace exists and user is a member
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        include: {
+          members: {
+            where: { userId: req.user.id },
+          },
+        },
+      });
 
+      if (!workspace) {
+        return res.status(404).json({ message: "Không tìm thấy workspace" });
+      }
+
+      if (workspace.members.length === 0) {
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền truy cập workspace này" });
+      }
+
+      let chat = await chatService.getChatByWorkspaceId(workspaceId);
+
+      // If chat doesn't exist, create it automatically
       if (!chat) {
-        return res.status(404).json({ message: 'Không tìm thấy chat room' });
+        chat = await chatService.createWorkspaceChat(
+          workspaceId,
+          workspace.name,
+          req.user.id
+        );
+
+        // Add all existing workspace members to the chat
+        const workspaceMembers = await prisma.workspaceMember.findMany({
+          where: { workspaceId },
+          select: { userId: true },
+        });
+
+        for (const member of workspaceMembers) {
+          if (member.userId !== req.user.id) {
+            await chatService.addChatMember(chat.id, member.userId);
+          }
+        }
+
+        // Refetch with full data
+        chat = await chatService.getChatByWorkspaceId(workspaceId);
       }
 
       const isMember = await chatService.isChatMember(chat.id, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền truy cập chat này' });
+        // Auto-add user if they're a workspace member but not a chat member
+        await chatService.addChatMember(chat.id, req.user.id);
       }
 
-      const unreadCount = await chatService.getUnreadCount(chat.id, req.user.id);
+      const unreadCount = await chatService.getUnreadCount(
+        chat.id,
+        req.user.id
+      );
 
       res.json({
         ...chat,
         unreadCount,
       });
     } catch (error) {
-      console.error('Lỗi getChatByWorkspace:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi getChatByWorkspace:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -86,7 +130,9 @@ class ChatController {
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền truy cập chat này' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền truy cập chat này" });
       }
 
       const messages = await chatService.getChatMessages(
@@ -98,11 +144,12 @@ class ChatController {
       res.json({
         messages,
         hasMore: messages.length === parseInt(limit),
-        nextCursor: messages.length > 0 ? messages[messages.length - 1].id : null,
+        nextCursor:
+          messages.length > 0 ? messages[messages.length - 1].id : null,
       });
     } catch (error) {
-      console.error('Lỗi getMessages:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi getMessages:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -112,20 +159,26 @@ class ChatController {
       const { q, limit = 20 } = req.query;
 
       if (!q) {
-        return res.status(400).json({ message: 'Thiếu từ khóa tìm kiếm' });
+        return res.status(400).json({ message: "Thiếu từ khóa tìm kiếm" });
       }
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền truy cập chat này' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền truy cập chat này" });
       }
 
-      const messages = await chatService.searchMessages(chatId, q, parseInt(limit));
+      const messages = await chatService.searchMessages(
+        chatId,
+        q,
+        parseInt(limit)
+      );
 
       res.json({ messages });
     } catch (error) {
-      console.error('Lỗi searchMessages:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi searchMessages:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -136,7 +189,9 @@ class ChatController {
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền gửi tin nhắn' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền gửi tin nhắn" });
       }
 
       const message = await chatService.createMessage(chatId, req.user.id, {
@@ -145,19 +200,22 @@ class ChatController {
         replyToId,
       });
 
-      // Emit qua chat namespace thay vì main io instance
-      const chatNamespace = req.app.get('chatNamespace');
+      // Emit qua chat namespace đến tất cả members bao gồm người gửi
+      const chatNamespace = req.app.get("chatNamespace");
       if (chatNamespace) {
-        console.log(`[Chat] Emitting new_message to chat:${chatId}`, message.id);
-        chatNamespace.to(`chat:${chatId}`).emit('new_message', message);
+        console.log(
+          `[Chat] Emitting new_message to chat:${chatId}`,
+          message.id
+        );
+        chatNamespace.in(`chat:${chatId}`).emit("new_message", message);
       } else {
-        console.error('[Chat] chatNamespace not found!');
+        console.error("[Chat] chatNamespace not found!");
       }
 
       res.status(201).json(message);
     } catch (error) {
-      console.error('Lỗi sendMessage:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi sendMessage:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -168,11 +226,15 @@ class ChatController {
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền upload file' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền upload file" });
       }
 
       if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ message: 'Không có file nào được upload' });
+        return res
+          .status(400)
+          .json({ message: "Không có file nào được upload" });
       }
 
       const attachments = req.files.map((file) => ({
@@ -189,7 +251,9 @@ class ChatController {
         });
 
         if (!existingMessage || existingMessage.senderId !== req.user.id) {
-          return res.status(403).json({ message: 'Không có quyền thêm tệp vào tin nhắn này' });
+          return res
+            .status(403)
+            .json({ message: "Không có quyền thêm tệp vào tin nhắn này" });
         }
 
         await prisma.chatAttachment.createMany({
@@ -214,7 +278,9 @@ class ChatController {
           },
         });
       } else {
-        const messageType = attachments[0].mimeType.startsWith('image/') ? 'image' : 'file';
+        const messageType = attachments[0].mimeType.startsWith("image/")
+          ? "image"
+          : "file";
 
         message = await chatService.createMessage(chatId, req.user.id, {
           content: content || null,
@@ -224,19 +290,22 @@ class ChatController {
         });
       }
 
-      // Emit qua chat namespace thay vì main io instance
-      const chatNamespace = req.app.get('chatNamespace');
+      // Emit qua chat namespace đến tất cả members bao gồm người upload
+      const chatNamespace = req.app.get("chatNamespace");
       if (chatNamespace) {
-        console.log(`[Chat] Emitting new_message (upload) to chat:${chatId}`, message.id);
-        chatNamespace.to(`chat:${chatId}`).emit('new_message', message);
+        console.log(
+          `[Chat] Emitting new_message (upload) to chat:${chatId}`,
+          message.id
+        );
+        chatNamespace.in(`chat:${chatId}`).emit("new_message", message);
       } else {
-        console.error('[Chat] chatNamespace not found!');
+        console.error("[Chat] chatNamespace not found!");
       }
 
       res.status(201).json(message);
     } catch (error) {
-      console.error('Lỗi uploadAttachment:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi uploadAttachment:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -245,27 +314,36 @@ class ChatController {
       const { messageId } = req.params;
       const { content } = req.body;
 
-      if (!content || content.trim() === '') {
-        return res.status(400).json({ message: 'Nội dung tin nhắn không được để trống' });
+      if (!content || content.trim() === "") {
+        return res
+          .status(400)
+          .json({ message: "Nội dung tin nhắn không được để trống" });
       }
 
-      const message = await chatService.updateMessage(messageId, req.user.id, content);
+      const message = await chatService.updateMessage(
+        messageId,
+        req.user.id,
+        content
+      );
 
-      // Emit qua chat namespace
-      const chatNamespace = req.app.get('chatNamespace');
+      // Emit qua chat namespace đến tất cả members
+      const chatNamespace = req.app.get("chatNamespace");
       if (chatNamespace) {
         const chatId = message.chatId;
-        console.log(`[Chat] Emitting message_updated to chat:${chatId}`, messageId);
-        chatNamespace.to(`chat:${chatId}`).emit('message_updated', message);
+        console.log(
+          `[Chat] Emitting message_updated to chat:${chatId}`,
+          messageId
+        );
+        chatNamespace.in(`chat:${chatId}`).emit("message_updated", message);
       }
 
       res.json(message);
     } catch (error) {
-      console.error('Lỗi updateMessage:', error);
-      if (error.message.includes('quyền')) {
+      console.error("Lỗi updateMessage:", error);
+      if (error.message.includes("quyền")) {
         return res.status(403).json({ message: error.message });
       }
-      res.status(500).json({ message: 'Lỗi server' });
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -275,21 +353,26 @@ class ChatController {
 
       const message = await chatService.deleteMessage(messageId, req.user.id);
 
-      // Emit qua chat namespace
-      const chatNamespace = req.app.get('chatNamespace');
+      // Emit qua chat namespace đến tất cả members
+      const chatNamespace = req.app.get("chatNamespace");
       if (chatNamespace) {
         const chatId = message.chatId;
-        console.log(`[Chat] Emitting message_deleted to chat:${chatId}`, messageId);
-        chatNamespace.to(`chat:${chatId}`).emit('message_deleted', { messageId });
+        console.log(
+          `[Chat] Emitting message_deleted to chat:${chatId}`,
+          messageId
+        );
+        chatNamespace
+          .in(`chat:${chatId}`)
+          .emit("message_deleted", { messageId });
       }
 
-      res.json({ message: 'Đã xóa tin nhắn' });
+      res.json({ message: "Đã xóa tin nhắn" });
     } catch (error) {
-      console.error('Lỗi deleteMessage:', error);
-      if (error.message.includes('quyền')) {
+      console.error("Lỗi deleteMessage:", error);
+      if (error.message.includes("quyền")) {
         return res.status(403).json({ message: error.message });
       }
-      res.status(500).json({ message: 'Lỗi server' });
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -299,15 +382,17 @@ class ChatController {
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền truy cập chat này' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền truy cập chat này" });
       }
 
       await chatService.updateLastRead(chatId, req.user.id);
 
-      res.json({ message: 'Đã đánh dấu đã đọc' });
+      res.json({ message: "Đã đánh dấu đã đọc" });
     } catch (error) {
-      console.error('Lỗi markAsRead:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi markAsRead:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -318,10 +403,13 @@ class ChatController {
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền truy cập chat này' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền truy cập chat này" });
       }
 
-      const mimeTypeFilter = type === 'images' ? 'image/' : type === 'files' ? null : null;
+      const mimeTypeFilter =
+        type === "images" ? "image/" : type === "files" ? null : null;
 
       const attachments = await chatService.getChatAttachments(
         chatId,
@@ -333,11 +421,14 @@ class ChatController {
       res.json({
         attachments,
         hasMore: attachments.length === parseInt(limit),
-        nextCursor: attachments.length > 0 ? attachments[attachments.length - 1].id : null,
+        nextCursor:
+          attachments.length > 0
+            ? attachments[attachments.length - 1].id
+            : null,
       });
     } catch (error) {
-      console.error('Lỗi getAttachments:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi getAttachments:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 
@@ -347,15 +438,17 @@ class ChatController {
 
       const isMember = await chatService.isChatMember(chatId, req.user.id);
       if (!isMember) {
-        return res.status(403).json({ message: 'Bạn không có quyền truy cập chat này' });
+        return res
+          .status(403)
+          .json({ message: "Bạn không có quyền truy cập chat này" });
       }
 
       const members = await chatService.getChatMembers(chatId);
 
       res.json({ members });
     } catch (error) {
-      console.error('Lỗi getMembers:', error);
-      res.status(500).json({ message: 'Lỗi server' });
+      console.error("Lỗi getMembers:", error);
+      res.status(500).json({ message: "Lỗi server" });
     }
   }
 }

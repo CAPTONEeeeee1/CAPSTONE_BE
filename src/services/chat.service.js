@@ -1,8 +1,12 @@
-const { prisma } = require('../shared/prisma');
-const fs = require('fs').promises;
-const path = require('path');
+const { prisma } = require("../shared/prisma");
+const fs = require("fs").promises;
+const path = require("path");
 
 class ChatService {
+  constructor() {
+    this.prisma = prisma;
+  }
+
   async createWorkspaceChat(workspaceId, workspaceName, ownerId) {
     const chat = await prisma.workspaceChat.create({
       data: {
@@ -12,7 +16,7 @@ class ChatService {
     });
 
     await this.addChatMember(chat.id, ownerId);
-    
+
     return chat;
   }
 
@@ -66,7 +70,7 @@ class ChatService {
       skip: cursor ? 1 : 0,
       cursor: cursor ? { id: cursor } : undefined,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       include: {
         sender: {
@@ -104,7 +108,7 @@ class ChatService {
           {
             content: {
               contains: query,
-              mode: 'insensitive',
+              mode: "insensitive",
             },
           },
           {
@@ -112,7 +116,7 @@ class ChatService {
               some: {
                 fileName: {
                   contains: query,
-                  mode: 'insensitive',
+                  mode: "insensitive",
                 },
               },
             },
@@ -121,7 +125,7 @@ class ChatService {
       },
       take: limit,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       include: {
         sender: {
@@ -144,7 +148,7 @@ class ChatService {
         chatId,
         senderId,
         content,
-        messageType: messageType || 'text',
+        messageType: messageType || "text",
         replyToId,
         attachments: attachments
           ? {
@@ -191,7 +195,7 @@ class ChatService {
     });
 
     if (!message || message.senderId !== userId) {
-      throw new Error('Không có quyền chỉnh sửa tin nhắn này');
+      throw new Error("Không có quyền chỉnh sửa tin nhắn này");
     }
 
     return await prisma.chatMessage.update({
@@ -219,7 +223,7 @@ class ChatService {
     });
 
     if (!message || message.senderId !== userId) {
-      throw new Error('Không có quyền xóa tin nhắn này');
+      throw new Error("Không có quyền xóa tin nhắn này");
     }
 
     return await prisma.chatMessage.update({
@@ -270,7 +274,12 @@ class ChatService {
     });
   }
 
-  async getChatAttachments(chatId, mimeTypeFilter = null, limit = 50, cursor = null) {
+  async getChatAttachments(
+    chatId,
+    mimeTypeFilter = null,
+    limit = 50,
+    cursor = null
+  ) {
     const where = {
       message: {
         chatId,
@@ -290,7 +299,7 @@ class ChatService {
       skip: cursor ? 1 : 0,
       cursor: cursor ? { id: cursor } : undefined,
       orderBy: {
-        uploadedAt: 'desc',
+        uploadedAt: "desc",
       },
       include: {
         uploadedBy: {
@@ -316,15 +325,20 @@ class ChatService {
     });
 
     if (!attachment) {
-      throw new Error('Không tìm thấy tệp đính kèm');
+      throw new Error("Không tìm thấy tệp đính kèm");
     }
 
-    const filePath = path.join(process.cwd(), 'uploads', 'chat', path.basename(attachment.fileUrl));
-    
+    const filePath = path.join(
+      process.cwd(),
+      "uploads",
+      "chat",
+      path.basename(attachment.fileUrl)
+    );
+
     try {
       await fs.unlink(filePath);
     } catch (error) {
-      console.error('Lỗi khi xóa file:', error);
+      console.error("Lỗi khi xóa file:", error);
     }
 
     return await prisma.chatAttachment.delete({
