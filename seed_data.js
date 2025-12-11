@@ -2,8 +2,8 @@ import bcrypt from 'bcryptjs';
 
 
 async function hashPassword(plain) {
-const salt = await bcrypt.genSalt(10);
-return bcrypt.hash(plain, salt);
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(plain, salt);
 }
 
 
@@ -18,6 +18,14 @@ async function main() {
     // Cẩn thận: cái này sẽ xóa sạch tất cả dữ liệu
     await prisma.activityLog.deleteMany()
     await prisma.notification.deleteMany()
+
+    // Chat System
+    await prisma.chatAttachment.deleteMany()
+    await prisma.chatMessage.deleteMany()
+    await prisma.chatMember.deleteMany()
+    await prisma.workspaceChat.deleteMany()
+
+    // Cards & Related
     await prisma.cardAttachment.deleteMany()
     await prisma.comment.deleteMany()
     await prisma.cardLabel.deleteMany()
@@ -26,9 +34,13 @@ async function main() {
     await prisma.label.deleteMany()
     await prisma.list.deleteMany()
     await prisma.board.deleteMany()
+
+    // Workspace & Members
     await prisma.workspaceInvitation.deleteMany()
     await prisma.workspaceMember.deleteMany()
     await prisma.workspace.deleteMany()
+
+    // Auth & Settings
     await prisma.refreshToken.deleteMany()
     await prisma.emailVerification.deleteMany()
     await prisma.passwordReset.deleteMany()
@@ -72,16 +84,28 @@ async function main() {
             {
                 userId: admin.id,
                 emailNotifications: true,
-                taskAssignedEmail: true,
-                workspaceInviteEmail: true,
-                invitationResponseEmail: true,
+                workspaceCreated: true,
+                workspaceInvitations: true,
+                workspaceInvitationResponse: true,
+                boardCreated: true,
+                boardDeleted: true,
+                taskAssigned: true,
+                inAppGroupingEnabled: true,
+                emailDigestEnabled: true,
+                emailDigestFrequency: 'DAILY',
             },
             {
                 userId: member.id,
                 emailNotifications: true,
-                taskAssignedEmail: true,
-                workspaceInviteEmail: true,
-                invitationResponseEmail: true,
+                workspaceCreated: true,
+                workspaceInvitations: true,
+                workspaceInvitationResponse: true,
+                boardCreated: true,
+                boardDeleted: true,
+                taskAssigned: true,
+                inAppGroupingEnabled: true,
+                emailDigestEnabled: true,
+                emailDigestFrequency: 'DAILY',
             },
         ],
     })
@@ -92,7 +116,15 @@ async function main() {
             name: 'Demo Workspace',
             description: 'Workspace mẫu cho hệ thống quản lý task / board',
             visibility: 'private',
+            ownerId: admin.id,
+        },
+    })
 
+    // WORKSPACE CHAT ----------------------------------------------
+    const workspaceChat = await prisma.workspaceChat.create({
+        data: {
+            workspaceId: workspace.id,
+            name: 'Demo Workspace - Chat',
         },
     })
 
@@ -102,7 +134,7 @@ async function main() {
             {
                 workspaceId: workspace.id,
                 userId: admin.id,
-                role: 'OWNER',
+                role: 'owner',
                 invitedAt: new Date(),
                 joinedAt: new Date(),
             },
@@ -112,6 +144,22 @@ async function main() {
                 role: 'member',
                 invitedById: admin.id,
                 invitedAt: new Date(),
+                joinedAt: new Date(),
+            },
+        ],
+    })
+
+    // CHAT MEMBERS ------------------------------------------------
+    await prisma.chatMember.createMany({
+        data: [
+            {
+                chatId: workspaceChat.id,
+                userId: admin.id,
+                joinedAt: new Date(),
+            },
+            {
+                chatId: workspaceChat.id,
+                userId: member.id,
                 joinedAt: new Date(),
             },
         ],
@@ -394,7 +442,73 @@ async function main() {
         ],
     })
 
+    // CHAT MESSAGES -----------------------------------------------
+    const chatMsg1 = await prisma.chatMessage.create({
+        data: {
+            chatId: workspaceChat.id,
+            senderId: admin.id,
+            messageType: 'text',
+            content: 'Chào mừng mọi người đến với workspace Demo! 🎉',
+        },
+    })
+
+    const chatMsg2 = await prisma.chatMessage.create({
+        data: {
+            chatId: workspaceChat.id,
+            senderId: member.id,
+            messageType: 'text',
+            content: 'Xin chào! Cảm ơn đã mời tôi tham gia.',
+        },
+    })
+
+    const chatMsg3 = await prisma.chatMessage.create({
+        data: {
+            chatId: workspaceChat.id,
+            senderId: admin.id,
+            messageType: 'text',
+            content: 'Mọi người có thể thảo luận về dự án ở đây nhé!',
+            replyToId: chatMsg2.id,
+        },
+    })
+
+    // CHAT ATTACHMENTS --------------------------------------------
+    await prisma.chatAttachment.create({
+        data: {
+            messageId: chatMsg3.id,
+            fileName: 'project-overview.pdf',
+            fileSize: 250000,
+            mimeType: 'application/pdf',
+            fileUrl: '/uploads/chat/project-overview-123456.pdf',
+            uploadedById: admin.id,
+        },
+    })
+
+    // Update lastReadAt cho chat members
+    await prisma.chatMember.update({
+        where: {
+            chatId_userId: {
+                chatId: workspaceChat.id,
+                userId: member.id,
+            },
+        },
+        data: {
+            lastReadAt: new Date(),
+        },
+    })
+
     console.log('✅ Seeding done.')
+    console.log(`📊 Summary:`)
+    console.log(`   - Users: 2`)
+    console.log(`   - Workspaces: 1`)
+    console.log(`   - Workspace Chat: 1`)
+    console.log(`   - Chat Messages: 3`)
+    console.log(`   - Boards: 1`)
+    console.log(`   - Lists: 3`)
+    console.log(`   - Cards: 3`)
+    console.log(`   - Labels: 3`)
+    console.log(`   - Comments: 2`)
+    console.log(`   - Notifications: 2`)
+    console.log(`   - Activity Logs: 3`)
 }
 
 main()

@@ -2,6 +2,7 @@ const { prisma } = require('../shared/prisma');
 const { createWorkspaceSchema, inviteMemberSchema, updateWorkspaceSchema, updateMemberRoleSchema } = require('../validators/workspace.validators');
 const { createNotification, sendWorkspaceInvitationNotification, sendInvitationResponseNotification, sendWorkspaceDeletedNotification, sendMemberRemovedNotification } = require('../services/notification.service');
 const { logActivity, getClientInfo } = require('../services/activity.service');
+const chatService = require('../services/chat.service');
 
 
 // --- CREATE WORKSPACE ---
@@ -24,6 +25,13 @@ async function createWorkspace(req, res) {
         await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: req.user.id, role: 'OWNER', joinedAt: new Date() } });
         return workspace;
     });
+
+    // Tạo chat cho workspace
+    try {
+        await chatService.createWorkspaceChat(ws.id, ws.name, req.user.id);
+    } catch (error) {
+        console.error('Lỗi khi tạo chat workspace:', error);
+    }
 
     const clientInfo = getClientInfo(req);
     logActivity({
@@ -382,6 +390,16 @@ async function acceptInvitation(req, res) {
             data: { status: 'accepted', respondedAt: new Date() }
         });
     });
+
+    // Thêm member vào chat workspace
+    try {
+        const chat = await chatService.getChatByWorkspaceId(invitation.workspaceId);
+        if (chat) {
+            await chatService.addChatMember(chat.id, req.user.id);
+        }
+    } catch (error) {
+        console.error('Lỗi khi thêm member vào chat:', error);
+    }
 
     sendInvitationResponseNotification({
         inviterId: invitation.invitedById,

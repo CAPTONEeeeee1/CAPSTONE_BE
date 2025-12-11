@@ -83,6 +83,10 @@ model User {
   // Payments
   payments          Payment[]
 
+  // Chat
+  chatMemberships   ChatMember[]        @relation("ChatMembership")
+  chatMessages      ChatMessage[]       @relation("ChatMessageSender")
+  chatAttachments   ChatAttachment[]    @relation("ChatAttachmentUploader")
 
 }
 
@@ -129,6 +133,8 @@ model Workspace {
   
   boards      Board[]
 
+  // Chat
+  chat        WorkspaceChat?
 
   payments    Payment[]
   createdAt   DateTime          @default(now())
@@ -473,4 +479,75 @@ model ActivityLog {
   @@index([userId, createdAt])
   @@index([action])
   @@index([entityType, entityId])
+}
+
+// =======================================================
+// === CHAT SYSTEM ===
+// =======================================================
+
+model WorkspaceChat {
+  id          String    @id @default(cuid())
+  workspaceId String    @unique
+  name        String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   ChatMember[]
+  messages  ChatMessage[]
+  
+  @@index([workspaceId])
+}
+
+model ChatMember {
+  id          String    @id @default(cuid())
+  chatId      String
+  userId      String
+  joinedAt    DateTime  @default(now())
+  lastReadAt  DateTime?
+  
+  chat WorkspaceChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User          @relation("ChatMembership", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id          String    @id @default(cuid())
+  chatId      String
+  senderId    String
+  messageType String    @default("text")
+  content     String?
+  replyToId   String?
+  isEdited    Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  chat        WorkspaceChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender      User          @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  attachments ChatAttachment[]
+  replyTo     ChatMessage?  @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     ChatMessage[] @relation("MessageReply")
+  
+  @@index([chatId, createdAt(sort: Desc)])
+  @@index([senderId])
+}
+
+model ChatAttachment {
+  id           String    @id @default(cuid())
+  messageId    String
+  fileName     String
+  fileSize     Int
+  mimeType     String
+  fileUrl      String
+  uploadedById String
+  uploadedAt   DateTime  @default(now())
+  
+  message      ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploadedBy   User        @relation("ChatAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  
+  @@index([messageId])
 }
