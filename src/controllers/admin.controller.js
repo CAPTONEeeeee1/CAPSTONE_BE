@@ -16,7 +16,7 @@ async function getAllUsers(req, res) {
       }
     : {};
 
-  const [users, total] = await Promise.all([
+  const [rawUsers, total] = await Promise.all([
     prisma.user.findMany({
       where,
       select: {
@@ -26,9 +26,21 @@ async function getAllUsers(req, res) {
         role: true,
         status: true,
         createdAt: true,
+        avatar: true,
         _count: {
           select: {
             workspaceMemberships: true,
+          },
+        },
+        workspaceMemberships: {
+          select: {
+            role: true,
+            workspace: {
+              select: {
+                plan: true,
+                planExpiresAt: true,
+              },
+            },
           },
         },
       },
@@ -39,8 +51,124 @@ async function getAllUsers(req, res) {
     prisma.user.count({ where }),
   ]);
 
+  const now = new Date();
+
+  const users = rawUsers.map((u) => {
+    const ownedWorkspaces = u.workspaceMemberships.filter(
+      (m) => m.role === 'OWNER'
+    ).length;
+
+    const memberWorkspaces = u.workspaceMemberships.length;
+
+    const hasActivePremiumWorkspace = u.workspaceMemberships.some(
+      (m) =>
+        m.workspace.plan === 'PREMIUM' &&
+        (!m.workspace.planExpiresAt || m.workspace.planExpiresAt > now)
+    );
+
+    return {
+      id: u.id,
+      email: u.email,
+      fullName: u.fullName,
+      role: u.role,
+      status: u.status,
+      createdAt: u.createdAt,
+      avatar: u.avatar,
+
+      ownedWorkspaces,
+      memberWorkspaces,
+
+      _count: {
+        workspaceMemberships: u._count.workspaceMemberships,
+        ownedWorkspaces,
+      },
+
+      accountType: hasActivePremiumWorkspace ? 'premium' : 'free',
+    };
+  });
+
   res.json({
     users,
+    pagination: {
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit)),
+    },
+  });
+}
+
+// --- Lấy danh sách thanh toán (Admin Payment) ---
+async function getPayments(req, res) {
+  const { page = 1, limit = 20, search } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const where = {};
+
+  if (search) {
+    where.OR = [
+      { orderId: { contains: search, mode: 'insensitive' } },
+      { transactionNo: { contains: search, mode: 'insensitive' } },
+      {
+        workspace: {
+          name: { contains: search, mode: 'insensitive' },
+        },
+      },
+      {
+        user: {
+          email: { contains: search, mode: 'insensitive' },
+        },
+      },
+    ];
+  }
+
+  const [payments, total] = await Promise.all([
+    prisma.payment.findMany({
+      where,
+      include: {
+        workspace: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.payment.count({ where }),
+  ]);
+
+  const PLAN_LABELS = {
+    monthly: 'Gói 1 tháng',
+    semiannual: 'Gói 6 tháng',
+    annual: 'Gói 12 tháng',
+    free_trial: 'Dùng thử',
+  };
+
+  res.json({
+    payments: payments.map((p) => ({
+      id: p.id,
+      orderId: p.orderId,
+      workspaceId: p.workspaceId,
+      workspaceName: p.workspace?.name || '(Đã xóa workspace)',
+      userId: p.userId,
+      userName: p.user?.fullName || '(Ẩn danh)',
+      userEmail: p.user?.email || '',
+      amount: p.amount,
+      status: p.status,
+      plan: p.plan,
+      planLabel: PLAN_LABELS[p.plan] || 'Không xác định',
+      createdAt: p.createdAt,
+    })),
     pagination: {
       total,
       page: parseInt(page),
@@ -86,7 +214,6 @@ async function updateUserStatus(req, res) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // ❌ Không cho phép thay đổi trạng thái của admin duy nhất
   if (user.email === 'admin@plannex.com') {
     return res.status(403).json({ error: 'Cannot modify system admin account' });
   }
@@ -127,7 +254,6 @@ async function updateUserRole(req, res) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // ❌ Không cho phép thay đổi vai trò admin mặc định
   if (user.email === 'admin@plannex.com') {
     return res.status(403).json({ error: 'Cannot modify system admin account' });
   }
@@ -159,7 +285,6 @@ async function updateUserInfo(req, res) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // ❌ Không cho phép đổi tên hoặc sửa thông tin admin mặc định
   if (user.email === 'admin@plannex.com') {
     return res.status(403).json({ error: 'Cannot modify system admin account' });
   }
@@ -190,17 +315,44 @@ async function deleteUser(req, res) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // ❌ Không cho phép xóa admin duy nhất
   if (user.email === 'admin@plannex.com') {
-    return res.status(403).json({ error: 'Cannot delete the system admin account' });
+    return res
+      .status(403)
+      .json({ error: 'Cannot delete the system admin account' });
   }
 
   try {
-    // Xóa dữ liệu liên quan
-    await prisma.workspaceMembership.deleteMany({ where: { userId } });
-    await prisma.board.deleteMany({ where: { createdById: userId } });
-    await prisma.card.deleteMany({ where: { createdById: userId } });
-    await prisma.workspace.deleteMany({ where: { members: { some: { userId: userId, role: 'OWNER' } } } });
+    const [ownedWorkspaces, createdBoards, relatedCards] = await Promise.all([
+      prisma.workspace.count({
+        where: {
+          members: {
+            some: {
+              userId: userId,
+              role: 'OWNER',
+            },
+          },
+        },
+      }),
+      prisma.board.count({
+        where: { createdById: userId },
+      }),
+      prisma.card.count({
+        where: {
+          OR: [
+            { createdById: userId },
+            { reporterId: userId },
+            { updatedById: userId },
+          ],
+        },
+      }),
+    ]);
+
+    if (ownedWorkspaces > 0 || createdBoards > 0 || relatedCards > 0) {
+      return res.status(400).json({
+        error:
+          'Không thể xóa tài khoản vì người dùng đã tạo hoặc tham gia công việc (workspace/board/card).',
+      });
+    }
 
     await prisma.user.delete({ where: { id: userId } });
 
@@ -215,10 +367,12 @@ async function deleteUser(req, res) {
       ...clientInfo,
     });
 
-    res.json({ success: true, message: 'User deleted successfully' });
+    return res.json({ success: true, message: 'User deleted successfully' });
   } catch (err) {
     console.error('Delete user failed:', err);
-    res.status(500).json({ error: 'Cannot delete user, related data exists.' });
+    return res.status(500).json({
+      error: 'Cannot delete user, related data exists.',
+    });
   }
 }
 
@@ -275,6 +429,7 @@ async function getStats(req, res) {
 
 module.exports = {
   getAllUsers,
+  getPayments,
   getUserDetail,
   updateUserStatus,
   updateUserRole,
