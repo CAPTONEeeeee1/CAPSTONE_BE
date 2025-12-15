@@ -219,7 +219,7 @@ async function getWorkspaceBoards(req, res) {
     const { workspaceId } = req.params;
     // Giả định middleware đã kiểm tra quyền truy cập workspace
     const boards = await prisma.board.findMany({
-        where: { workspaceId: workspaceId },
+        where: { workspaceId: workspaceId, archivedAt: null },
         orderBy: { createdAt: 'asc' }
     });
     res.json({ boards });

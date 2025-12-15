@@ -20,98 +20,113 @@ async function checkWorkspaceAccess(boardId, userId) {
 
 async function searchCards(req, res) {
     try {
-        const {
-            boardId,
-            q,
-            labelId,
-            memberId,
-            listId,
-            dueBefore,
-            dueAfter,
-            limit: limitRaw,
-        } = req.query;
+        const { boardId, q } = req.query;
+        const userId = req.user.id;
+        // Giới hạn kết quả mặc định là 20
+        const limit = 20;
 
-        if (!boardId) return res.status(400).json({ error: 'boardId required' });
+        // 1. Kiểm tra tham số tìm kiếm
+        if (!q || typeof q !== 'string' || q.trim().length < 2) {
+            return res.json({ results: [] });
+        }
+        const searchTerm = q.trim();
 
-        // Kiểm tra quyền truy cập Workspace (Áp dụng logic Code 2)
-        const { board, workspaceMember } = await checkWorkspaceAccess(String(boardId), req.user.id);
-        if (!board) return res.status(404).json({ error: 'Board not found' });
-        if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
+        // 2. Tìm kiếm Toàn cục (Global Search) - khi không có boardId
+        if (!boardId) {
+            const cards = await prisma.card.findMany({
+                where: {
+                    // Đảm bảo Card thuộc Board mà User có quyền truy cập Workspace
+                    board: {
+                        workspace: {
+                            members: {
+                                some: { userId: userId }
+                            }
+                        }
+                    },
+                    // Điều kiện tìm kiếm theo tiêu đề Card
+                    title: {
+                        contains: searchTerm,
+                        mode: 'insensitive'
+                    }
+                },
+                select: {
+                    id: true,
+                    title: true,
+                    // Lấy thông tin boardId và workspaceId qua quan hệ lồng nhau
+                    board: {
+                        select: {
+                            id: true,
+                            name: true, // Lấy thêm tên Board
+                            workspaceId: true,
+                        }
+                    }
+                },
+                take: limit,
+                orderBy: {
+                    updatedAt: 'desc'
+                }
+            });
 
-        // Khởi tạo các mệnh đề WHERE và tham số
-        const whereClauses = ['c."boardId" = $1'];
-        const params = [String(boardId)];
-        let p = 2; // Bắt đầu từ tham số thứ 2 ($2)
+            // Định dạng lại kết quả để đáp ứng yêu cầu
+            const results = cards.map(card => ({
+                id: card.id,
+                title: card.title,
+                boardId: card.board.id,
+                boardName: card.board.name, // Thêm boardName
+                workspaceId: card.board.workspaceId,
+            }));
 
-        if (typeof q === 'string' && q.trim().length > 0) {
-            whereClauses.push(
-                `(c."title" ILIKE '%' || $${p} || '%' OR c."description" ILIKE '%' || $${p} || '%')`
-            );
-            params.push(q.trim());
-            p++;
+            return res.json({ results });
         }
 
-        if (listId) {
-            whereClauses.push(`c."listId" = $${p}`);
-            params.push(String(listId));
-            p++;
+        // 3. Tìm kiếm theo Board cụ thể (Board-Specific Search) - khi có boardId
+
+        // Kiểm tra quyền truy cập Board (User phải là thành viên Workspace chứa Board đó)
+        const board = await prisma.board.findFirst({
+            where: {
+                id: boardId,
+                workspace: {
+                    members: {
+                        some: { userId }
+                    }
+                }
+            },
+            select: { workspaceId: true, name: true } // Lấy thêm tên board
+        });
+
+        if (!board) {
+            return res.status(404).json({ error: "Board not found or access denied" });
         }
 
-        if (labelId) {
-            whereClauses.push(
-                // Kiểm tra sự tồn tại trong bảng liên kết CardLabel
-                `EXISTS (SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c."id" AND cl."labelId" = $${p})`
-            );
-            params.push(String(labelId));
-            p++;
-        }
+        // Thực hiện tìm kiếm Card trong Board đã xác định
+        const cards = await prisma.card.findMany({
+            where: {
+                boardId: boardId,
+                title: {
+                    contains: searchTerm,
+                    mode: 'insensitive'
+                }
+            },
+            take: limit,
+            select: {
+                id: true,
+                title: true,
+            },
+            orderBy: {
+                updatedAt: 'desc'
+            }
+        });
+        
+        // Thêm workspaceId và boardName vào kết quả
+        const results = cards.map(card => ({
+            ...card,
+            boardId: boardId,
+            workspaceId: board.workspaceId,
+            boardName: board.name // Thêm boardName
+        }));
 
-        if (memberId) {
-            whereClauses.push(
-                // Kiểm tra sự tồn tại trong bảng liên kết CardMember
-                `EXISTS (SELECT 1 FROM "CardMember" cm WHERE cm."cardId" = c."id" AND cm."userId" = $${p})`
-            );
-            params.push(String(memberId));
-            p++;
-        }
+        return res.json({ results });
 
-        // Lọc ngày đến hạn
-        if (dueAfter) {
-            whereClauses.push(`c."dueDate" IS NOT NULL AND c."dueDate" >= $${p}`);
-            params.push(new Date(dueAfter));
-            p++;
-        }
-
-        if (dueBefore) {
-            whereClauses.push(`c."dueDate" IS NOT NULL AND c."dueDate" <= $${p}`);
-            params.push(new Date(dueBefore));
-            p++;
-        }
-
-        // Xử lý LIMIT
-        let limit = Number(limitRaw || 100);
-        if (!Number.isFinite(limit) || limit <= 0) limit = 100;
-        if (limit > 200) limit = 200;
-
-        // Xây dựng truy vấn SQL
-        const sql = `
-            SELECT
-                c."id",
-                c."title",
-                c."description",
-                c."listId",
-                c."orderIdx",
-                c."keySeq",
-                NULL::float AS rank
-            FROM "Card" c
-            WHERE ${whereClauses.join(' AND ')}
-            ORDER BY c."updatedAt" DESC
-            LIMIT ${limit};
-        `;
-
-        // Thực thi truy vấn
-        const rows = await prisma.$queryRawUnsafe(sql, ...params);
-        return res.json({ results: rows });
     } catch (err) {
         console.error('searchCards error:', err);
         return res.status(500).json({ error: 'Internal Server Error' });
@@ -193,6 +208,11 @@ async function searchBoards(req, res) {
                 id: true,
                 name: true,
                 workspaceId: true,
+                workspace: { // Lấy thông tin workspace
+                    select: {
+                        name: true
+                    }
+                }
             },
         });
 
