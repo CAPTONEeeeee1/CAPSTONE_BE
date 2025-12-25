@@ -546,6 +546,7 @@ function getUserSuspendedEmailTemplate(userName) {
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
                 .alert-box { background: #f8d7da; color: #721c24; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }
                 .footer { margin-top: 20px; font-size: 12px; color: #777; }
+                .contact-info { margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; }
             </style>
         </head>
         <body>
@@ -554,7 +555,13 @@ function getUserSuspendedEmailTemplate(userName) {
                 <div class="alert-box">
                     <p>Xin chào <strong>${userName}</strong>,</p>
                     <p>Tài khoản của bạn tại PlanNex đã bị đình chỉ do vi phạm chính sách của chúng tôi. Bạn sẽ không thể đăng nhập vào tài khoản của mình.</p>
-                    <p>Nếu bạn cho rằng đây là một sự nhầm lẫn, vui lòng liên hệ với bộ phận hỗ trợ của chúng tôi.</p>
+                    <div class="contact-info">
+                        <p>Nếu bạn cho rằng đây là một sự nhầm lẫn, vui lòng liên hệ với bộ phận hỗ trợ của chúng tôi qua:</p>
+                        <ul>
+                            <li><strong>Gmail:</strong> authplannex@gmail.com</li>
+                            <li><strong>Zalo:</strong> 0901993313</li>
+                        </ul>
+                    </div>
                 </div>
                 <div class="footer">
                     <p>Email này được gửi từ PlanNex.</p>

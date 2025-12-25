@@ -28,8 +28,15 @@ async (accessToken, refreshToken, profile, done) => {
         // 2. Tìm người dùng bằng email đã chuẩn hóa
         let user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
-        if (!user) {
-            // TẠO người dùng mới 
+        if (user) {
+            // Nếu người dùng tồn tại, kiểm tra trạng thái
+            if (user.status === 'suspended') {
+                // Nếu tài khoản bị khóa, không cho phép đăng nhập
+                // Trả về false để passport biết xác thực thất bại
+                return done(null, false, { message: 'Tài khoản của bạn đã bị khóa.' });
+            }
+        } else {
+            // Nếu không tìm thấy, TẠO người dùng mới 
             user = await prisma.user.create({
                 data: {
                     email: normalizedEmail,

@@ -100,7 +100,7 @@ async function getAllUsers(req, res) {
 
 // --- Lấy danh sách thanh toán (Admin Payment) ---
 async function getPayments(req, res) {
-  const { page = 1, limit = 20, search } = req.query;
+  const { page = 1, limit = 20, search, startDate, endDate } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = {};
@@ -122,7 +122,14 @@ async function getPayments(req, res) {
     ];
   }
 
-  const [payments, total] = await Promise.all([
+  if (startDate && endDate) {
+    where.createdAt = {
+      gte: new Date(startDate),
+      lte: new Date(endDate),
+    };
+  }
+
+  const [payments, total, totalRevenueResult] = await Promise.all([
     prisma.payment.findMany({
       where,
       include: {
@@ -145,7 +152,15 @@ async function getPayments(req, res) {
       take: parseInt(limit),
     }),
     prisma.payment.count({ where }),
+    prisma.payment.aggregate({
+      where,
+      _sum: {
+        amount: true,
+      },
+    }),
   ]);
+
+  const totalRevenue = totalRevenueResult._sum.amount || 0;
 
   const PLAN_LABELS = {
     monthly: 'Gói 1 tháng',
@@ -175,6 +190,7 @@ async function getPayments(req, res) {
       limit: parseInt(limit),
       totalPages: Math.ceil(total / parseInt(limit)),
     },
+    totalRevenue,
   });
 }
 

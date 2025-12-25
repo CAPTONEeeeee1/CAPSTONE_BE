@@ -248,7 +248,7 @@ async function listCardsByList(req, res) {
 
     if (!list) return res.status(404).json({ error: 'List not found' });
 
-    // Check workspace membership (Tối ưu từ Code 2)
+    // Check workspace membership
     const workspaceMember = await prisma.workspaceMember.findFirst({
         where: { workspaceId: list.board.workspaceId, userId: req.user.id }
     });

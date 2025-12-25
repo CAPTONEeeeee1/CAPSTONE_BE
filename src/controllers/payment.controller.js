@@ -22,14 +22,17 @@ function sortObject(obj) {
 
 async function createVNPayPayment(req, res) {
     // TODO: The schema has been updated. Please run the following command to create and apply the migration:
-    // npx prisma migrate dev --name add_user_to_payment
-
     process.env.TZ = 'Asia/Ho_Chi_Minh';
 
     const userId = req.user.id;
-    const { amount, orderInfo, workspaceId, plan } = req.body; 
+    const { amount, orderInfo, workspaceId, plan: originalPlan } = req.body; 
 
-    if (!amount || !orderInfo || !workspaceId || !plan) {
+    let plan = originalPlan;
+    if (amount === 149000) {
+        plan = 'monthly';
+    }
+
+    if (!amount || !orderInfo || !workspaceId || !originalPlan) {
         return res.status(400).json({ error: 'Missing required payment information: amount, orderInfo, workspaceId, or plan.' });
     }
 
@@ -139,30 +142,39 @@ async function vnpayReturn(req, res) {
                 // SUCCESS
                 console.log(`VNPay Payment Return Successful: Order ID - ${orderId}, Amount - ${amount}`);
 
-                if (payment && payment.status === 'PENDING') {
-                    await prisma.$transaction(async (tx) => {
-                        await tx.payment.update({
-                            where: { id: payment.id },
-                            data: {
-                                status: 'SUCCESS',
-                                transactionNo: vnp_Params['vnp_TransactionNo'],
-                            },
+                if (payment) {
+                    if (payment.status === 'PENDING') {
+                        await prisma.$transaction(async (tx) => {
+                            await tx.payment.update({
+                                where: { id: payment.id },
+                                data: {
+                                    status: 'SUCCESS',
+                                    transactionNo: vnp_Params['vnp_TransactionNo'],
+                                },
+                            });
+    
+                            let planExpiresAt = new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+                            if (payment.amount === 149000) {
+                                planExpiresAt = new Date(new Date().setMonth(new Date().getMonth() + 1));
+                            }
+    
+                            await tx.workspace.update({
+                                where: { id: payment.workspaceId },
+                                data: {
+                                    plan: 'PREMIUM',
+                                    planExpiresAt: planExpiresAt,
+                                },
+                            });
+                            console.log(`Workspace ${payment.workspaceId} upgraded to PREMIUM.`);
                         });
-
-                        await tx.workspace.update({
-                            where: { id: payment.workspaceId },
-                            data: {
-                                plan: 'PREMIUM',
-                                planExpiresAt: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-                            },
-                        });
-                        console.log(`Workspace ${payment.workspaceId} upgraded to PREMIUM.`);
-                    });
+                    } else {
+                        console.log(`Payment for Order ID ${orderId} was already processed.`);
+                    }
+                    res.redirect(`${process.env.FRONTEND_URL}/dashboard?upgrade_success=true&workspace_id=${payment.workspaceId}`);
                 } else {
-                    console.log(`Payment for Order ID ${orderId} was already processed or not found.`);
+                    console.log(`Payment for Order ID ${orderId} not found.`);
+                    res.redirect(`${process.env.FRONTEND_URL}/payment-status?success=false&message=Payment not found`);
                 }
-
-                res.redirect(`${process.env.FRONTEND_URL}/payment-status?success=true&orderId=${orderId}&amount=${amount}`);
             } else {
                 // FAILED/CANCELLED
                 if (payment && payment.status === 'PENDING') {
@@ -234,11 +246,16 @@ async function vnpayIpn(req, res) {
                         },
                     });
 
+                    let planExpiresAt = new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+                    if (payment.amount === 149000) {
+                        planExpiresAt = new Date(new Date().setMonth(new Date().getMonth() + 1));
+                    }
+
                     await tx.workspace.update({
                         where: { id: payment.workspaceId },
                         data: {
                             plan: 'PREMIUM',
-                            planExpiresAt: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+                            planExpiresAt: planExpiresAt,
                         },
                     });
                 });
