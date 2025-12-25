@@ -7,7 +7,12 @@ const registerSchema = z.object({
         .email({ message: "Email không hợp lệ." })
         .toLowerCase()
         .trim(),
-    password: z.string().min(6, { message: "Mật khẩu phải có ít nhất 6 ký tự" }),
+    password: z.string()
+        .min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự" })
+        .max(15, { message: "Mật khẩu không được vượt quá 15 ký tự" })
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/, {
+            message: "Mật khẩu phải chứa ít nhất một chữ thường, một chữ hoa, một số và một ký tự đặc biệt (@$!%*?&)"
+        }),
     fullName: z.string().min(1, { message: "Họ và tên không được để trống" }),
     phone: z.string().min(8).max(20).optional()
 });
@@ -17,7 +22,7 @@ const loginSchema = z.object({
         .email({ message: "Email không hợp lệ." })
         .toLowerCase()
         .trim(),
-    password: z.string().min(6, { message: "Mật khẩu phải có ít nhất 6 ký tự" })
+    password: z.string().min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự" })
 });
 
 // --- SCHEMAS XÁC MINH/RESET PASSWORD ---
@@ -44,9 +49,21 @@ const resetPasswordSchema = z.object({
         .email({ message: "Email không hợp lệ." })
         .toLowerCase()
         .trim(),
-    code: z.string().trim().length(6, "Mã xác minh phải có đúng 6 chữ số."),
-    newPassword: z.string().min(6, "Mật khẩu mới phải có ít nhất 6 ký tự"),
-    confirmPassword: z.string().min(6, "Xác nhận mật khẩu phải có ít nhất 6 ký tự")
+    code: z.string()
+        .length(6, { message: "Mã đặt lại phải có 6 chữ số." })
+        .regex(/^[0-9]+$/, { message: "Mã đặt lại chỉ được chứa chữ số." }),
+    newPassword: z.string()
+        .min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự" })
+        .max(15, { message: "Mật khẩu không được vượt quá 15 ký tự" })
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/, {
+            message: "Mật khẩu phải chứa ít nhất một chữ thường, một chữ hoa, một số và một ký tự đặc biệt (@$!%*?&)"
+        }),
+    confirmPassword: z.string()
+        .min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự" })
+        .max(15, { message: "Mật khẩu không được vượt quá 15 ký tự" })
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/, {
+            message: "Mật khẩu phải chứa ít nhất một chữ thường, một chữ hoa, một số và một ký tự đặc biệt (@$!%*?&)"
+        })
 })
 .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Mật khẩu mới và xác nhận mật khẩu không khớp",
@@ -63,9 +80,19 @@ const updateProfileSchema = z.object({
 });
 
 const changePasswordSchema = z.object({
-    currentPassword: z.string().min(6, "Mật khẩu hiện tại phải có ít nhất 6 ký tự"),
-    newPassword: z.string().min(6, "Mật khẩu mới phải có ít nhất 6 ký tự"),
-    confirmPassword: z.string().min(6, "Xác nhận mật khẩu phải có ít nhất 6 ký tự")
+    currentPassword: z.string().min(8, "Mật khẩu hiện tại phải có ít nhất 8 ký tự"),
+    newPassword: z.string()
+        .min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự" })
+        .max(15, { message: "Mật khẩu không được vượt quá 15 ký tự" })
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/, {
+            message: "Mật khẩu phải chứa ít nhất một chữ thường, một chữ hoa, một số và một ký tự đặc biệt (@$!%*?&)"
+        }),
+    confirmPassword: z.string()
+        .min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự" })
+        .max(15, { message: "Mật khẩu không được vượt quá 15 ký tự" })
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/, {
+            message: "Mật khẩu phải chứa ít nhất một chữ thường, một chữ hoa, một số và một ký tự đặc biệt (@$!%*?&)"
+        })
 })
 .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Mật khẩu mới và xác nhận mật khẩu không khớp",
