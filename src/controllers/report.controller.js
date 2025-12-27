@@ -44,7 +44,7 @@ async function getWorkspaceReport(req, res) {
         cardsByStatus,
         cardsByPriority,
         activeMembers,
-        topContributors,
+        topPerformers,
         recentActivities
     ] = await Promise.all([
         prisma.workspaceMember.count({ where: { workspaceId } }),
@@ -58,17 +58,29 @@ async function getWorkspaceReport(req, res) {
             where: cardFilter,
             _count: { id: true }
         }).then(async results => {
+            const listIdsInResults = results.map(r => r.listId);
             const lists = await prisma.list.findMany({
-                where: { id: { in: results.map(r => r.listId) } },
-                select: { id: true, name: true }
+                where: { id: { in: listIdsInResults } },
+                select: { id: true, name: true, isDone: true }
             });
-            return results.map(r => {
-                const list = lists.find(l => l.id === r.listId);
-                return {
-                    status: list?.name || 'Unknown',
-                    count: r._count.id
-                };
+            const listMap = new Map(lists.map(list => [list.id, list])); // Use a Map for efficient lookup
+
+            const groupedCards = new Map(); // Use a Map for grouping
+
+            results.forEach(r => {
+                const list = listMap.get(r.listId);
+                if (list) {
+                    const statusName = list.isDone ? 'Done' : list.name;
+                    const currentCount = groupedCards.get(statusName)?.count || 0;
+                    groupedCards.set(statusName, { status: statusName, count: currentCount + r._count.id });
+                } else {
+                    // This case should ideally not happen if listIdsInResults are valid
+                    // but for robustness, handle cards from lists that might have been deleted/invalid
+                    const unknownCount = groupedCards.get('Unknown')?.count || 0;
+                    groupedCards.set('Unknown', { status: 'Unknown', count: unknownCount + r._count.id });
+                }
             });
+            return Array.from(groupedCards.values());
         }),
         
         prisma.card.groupBy({
@@ -92,23 +104,29 @@ async function getWorkspaceReport(req, res) {
             take: 10
         }),
         
-        prisma.card.groupBy({
-            by: ['createdById'],
-            where: cardFilter,
-            _count: { id: true },
-            orderBy: { _count: { id: 'desc' } },
+        prisma.cardMember.groupBy({
+            by: ['userId'],
+            where: {
+                card: {
+                    ...cardFilter,
+                    list: { isDone: true }
+                }
+            },
+            _count: { cardId: true },
+            orderBy: { _count: { cardId: 'desc' } },
             take: 10
         }).then(async results => {
-            const userIds = results.map(r => r.createdById);
+            const userIds = results.map(r => r.userId);
+            if (userIds.length === 0) return [];
             const users = await prisma.user.findMany({
                 where: { id: { in: userIds } },
                 select: { id: true, fullName: true, email: true, avatar: true }
             });
             return results.map(r => {
-                const user = users.find(u => u.id === r.createdById);
+                const user = users.find(u => u.id === r.userId);
                 return {
                     user,
-                    cardsCreated: r._count.id
+                    tasksCompleted: r._count.cardId
                 };
             });
         }),
@@ -164,7 +182,7 @@ async function getWorkspaceReport(req, res) {
         cardsByStatus,
         cardsByPriority,
         activeMembers,
-        topContributors,
+        topPerformers,
         recentActivities
     });
 }
@@ -473,38 +491,9 @@ async function getReportsOverview(req, res) {
         include: {
           user: { select: { id: true, fullName: true, avatar: true } },
         },
-      }),    prisma.activityLog.count({ where: activityWhere }),
-      prisma.card.groupBy({
-      by: ['createdById'],
-      where: {
-        board: { workspaceId: { in: workspaceIds } },
-        list: { isDone: true },
-      },
-      _count: {
-        id: true,
-      },
-      orderBy: {
-        _count: {
-          id: 'desc',
-        },
-      },
-      take: 5,
-    }).then(async results => {
-      const userIds = results.map(r => r.createdById);
-      if (userIds.length === 0) return [];
-      const users = await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, fullName: true, avatar: true },
-      });
-      return results.map(r => {
-        const user = users.find(u => u.id === r.createdById);
-        return {
-          user,
-          tasksCompleted: r._count.id,
-        };
-      });
-    }),
-  ]);
+      }), // Added closing brace and comma
+      prisma.activityLog.count({ where: activityWhere }),
+    ]);
 
   const boardEntityIds = recentActivities
     .filter(a => a.entityType === 'board')
@@ -550,7 +539,6 @@ async function getReportsOverview(req, res) {
       completionRate: totalCards > 0 ? ((completedCards / totalCards) * 100).toFixed(0) : 0,
     },
     recentActivities: enrichedActivities,
-    topPerformers,
     pagination: {
       total: totalActivityCount,
       page,

@@ -199,7 +199,7 @@ async function sendWorkspaceDeletedNotification({ deleterId, memberId, workspace
             await createNotification({
                 type: 'workspace_deleted',
                 title: 'Workspace đã bị xóa',
-                message: `Workspace "${workspaceName}" mà bạn là thành viên đã bị xóa bởi ${deleterName}.`,
+                message: `Workspace "${workspaceName}" mà bạn là thành viên đã bị xóa.`,
                 senderId: deleterId,
                 receiverId: memberId,
             });
@@ -220,7 +220,7 @@ async function sendWorkspaceDeletedNotification({ deleterId, memberId, workspace
         );
 
         if (shouldSendIndividualEmail) {
-            const emailHtml = getWorkspaceDeletedEmailTemplate(workspaceName, deleterName);
+            const emailHtml = getWorkspaceDeletedEmailTemplate(workspaceName);
 
             try {
                 await sendEmail({

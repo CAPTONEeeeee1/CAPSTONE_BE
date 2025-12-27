@@ -158,7 +158,7 @@ function getInvitationResponseEmailTemplate(workspace, responderName, accepted) 
 /**
  * Template Email: Workspace đã bị xóa
  */
-function getWorkspaceDeletedEmailTemplate(workspaceName, deleterName) {
+function getWorkspaceDeletedEmailTemplate(workspaceName) {
     return `
         <!DOCTYPE html>
         <html>
@@ -174,7 +174,7 @@ function getWorkspaceDeletedEmailTemplate(workspaceName, deleterName) {
             <div class="container">
                 <h2>🗑️ Workspace đã bị xóa</h2>
                 <div class="alert-box">
-                    <p>Workspace <strong>"${workspaceName}"</strong> mà bạn là thành viên đã bị xóa bởi <strong>${deleterName}</strong>.</p>
+                    <p>Workspace <strong>"${workspaceName}"</strong> mà bạn là thành viên đã bị xóa.</p>
                 </div>
                 <p>Mọi dữ liệu liên quan đến workspace này đã không còn khả dụng.</p>
                 <div class="footer">
