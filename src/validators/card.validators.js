@@ -45,7 +45,8 @@ const updateCardSchema = z.object({
 // Schema để di chuyển Card (chỉ cần List ID và Index)
 const moveCardSchema = z.object({
     toListId: z.string().min(1, 'ID List đích không được để trống.'),
-    toIndex: z.number().int().nonnegative('Index phải là số nguyên không âm.')
+    toIndex: z.number().int().nonnegative('Index phải là số nguyên không âm.'),
+    socketId: z.string().optional()
 });
 
 // Schema để gán (assign) thành viên vào Card

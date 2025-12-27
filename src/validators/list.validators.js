@@ -49,7 +49,8 @@ const reorderListsSchema = z.object({
                 .int({ message: 'Chỉ số thứ tự phải là số nguyên' })
                 .nonnegative({ message: 'Chỉ số thứ tự phải là số không âm' })
         })
-    ).min(1, { message: 'Mảng orders phải chứa ít nhất một phần tử' })
+    ).min(1, { message: 'Mảng orders phải chứa ít nhất một phần tử' }),
+    socketId: z.string().optional()
 });
 
 

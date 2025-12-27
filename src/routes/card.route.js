@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { auth } = require('../middleware/auth');
+const { attachSocket } = require('../middleware/socket');
 const {
     createCard,
     listCardsByList,
@@ -23,7 +24,7 @@ router.get('/board/:boardId/filter', getFilteredCards); // Lọc cards theo boar
 router.get('/:cardId', getCard);
 router.patch('/:cardId', updateCard);
 router.delete('/:cardId', deleteCard);
-router.post('/:cardId/move', moveCard);
+router.post('/:cardId/move', attachSocket, moveCard);
 router.get('/list/:listId', listCardsByList); // Lấy danh sách thẻ theo List ID (đặt sau /:cardId để tránh nhầm lẫn route param)
 
 

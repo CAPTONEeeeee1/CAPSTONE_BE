@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { auth } = require('../middleware/auth');
+const { attachSocket } = require('../middleware/socket');
 const { 
     createList, 
     getBoardLists, 
@@ -24,7 +25,7 @@ router.patch('/:listId', updateList);
 router.delete('/:listId', deleteList);
 
 // Sắp xếp lại Lists 
-router.post('/reorder', reorderLists); 
+router.post('/reorder', attachSocket, reorderLists); 
 
 
 module.exports = router;

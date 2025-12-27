@@ -2,7 +2,7 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { prisma } = require('../shared/prisma'); 
 const crypto = require('crypto'); // Dùng để tạo chuỗi ngẫu nhiên
-const bcrypt = require('bcryptjs'); // *** SỬA LỖI: Dùng bcryptjs cho phù hợp với package.json ***
+const bcrypt = require('bcryptjs'); 
 // Import normalizeEmail từ auth.controller.js
 const { normalizeEmail } = require('../controllers/auth.controller'); 
 
@@ -11,11 +11,9 @@ const { normalizeEmail } = require('../controllers/auth.controller');
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // *** CẢI TIẾN: Dùng URL tuyệt đối để tránh lỗi proxy/protocol khi triển khai ***
     // URL này phải khớp 100% với "Authorized redirect URIs" trong Google Console
     callbackURL: `${process.env.BACKEND_URL || 'http://localhost:3000'}/auth/google/callback`,
     scope: ['profile', 'email'],
-    // proxy: true, // Chỉ nếu sử dụng proxy
 },
 async (accessToken, refreshToken, profile, done) => {
     try {

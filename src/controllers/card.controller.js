@@ -402,9 +402,9 @@ async function moveCard(req, res) {
     const { cardId } = req.params;
     const parsed = moveCardSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { toListId, toIndex } = parsed.data;
+    const { toListId, toIndex, socketId } = parsed.data;
 
-    // Get card with board info in one query (Tối ưu từ Code 2)
+    // Get card with board info in one query
     const card = await prisma.card.findUnique({
         where: { id: cardId },
         select: { id: true, boardId: true, listId: true, board: { select: { workspaceId: true } } }
@@ -419,26 +419,70 @@ async function moveCard(req, res) {
 
     if (!workspaceMember) return res.status(403).json({ error: 'Not a workspace member' });
 
-    // Sử dụng Promise.all để tối ưu hóa việc cập nhật vị trí (Tối ưu từ Code 2)
-    await Promise.all([
-        // Đẩy các card khác xuống 1 bậc
-        prisma.$executeRawUnsafe(
-            'UPDATE "Card" SET "orderIdx" = "orderIdx" + 1 WHERE "listId" = $1 AND "orderIdx" >= $2 AND "id" != $3',
-            toListId, toIndex, cardId
-        ),
-        // Cập nhật card hiện tại
-        prisma.card.update({
-            where: { id: cardId },
-            data: {
-                listId: toListId,
-                orderIdx: toIndex,
-                updatedById: req.user.id
-            }
-        })
-    ]);
+    const fromListId = card.listId;
 
-    // Chỉ trả về thành công (Code 2) thay vì fetch lại card (Code 1) để tăng tốc độ
-    res.json({ success: true, message: 'Card moved successfully' });
+    try {
+        await prisma.$transaction([
+            // Decrement orderIdx for cards in the old list
+            prisma.card.updateMany({
+                where: {
+                    listId: fromListId,
+                    orderIdx: { gt: card.orderIdx },
+                },
+                data: {
+                    orderIdx: { decrement: 1 },
+                },
+            }),
+            // Increment orderIdx for cards in the new list
+            prisma.card.updateMany({
+                where: {
+                    listId: toListId,
+                    orderIdx: { gte: toIndex },
+                },
+                data: {
+                    orderIdx: { increment: 1 },
+                },
+            }),
+            // Update the card itself
+            prisma.card.update({
+                where: { id: cardId },
+                data: {
+                    listId: toListId,
+                    orderIdx: toIndex,
+                    updatedById: req.user.id
+                }
+            })
+        ]);
+
+        // Respond to the client first
+        res.json({ success: true, message: 'Card moved successfully' });
+
+        // Then, emit the event to other clients
+        try {
+            const payload = {
+                cardId,
+                fromListId,
+                toListId,
+                toIndex,
+                movedBy: req.user.id
+            };
+            const room = `board:${card.boardId}`;
+
+            if (socketId && req.boardNamespace.sockets.has(socketId)) {
+                // If socketId is provided and valid, broadcast from that socket
+                req.boardNamespace.to(room).except(socketId).emit('card_moved', payload);
+            } else {
+                // Otherwise, emit from the namespace to the room
+                req.boardNamespace.to(room).emit('card_moved', payload);
+            }
+        } catch (socketError) {
+            console.error("Socket emit error in moveCard:", socketError);
+        }
+
+    } catch (error) {
+        console.error("Error moving card:", error);
+        res.status(500).json({ error: "Failed to move card" });
+    }
 }
 
 

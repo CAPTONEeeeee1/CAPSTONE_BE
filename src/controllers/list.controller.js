@@ -268,30 +268,29 @@ async function deleteList(req, res) {
             }
         });
 
-        return res.json({
-            success: true,
-            message: `Danh sách đã được xóa và ${list._count.cards} thẻ đã được chuyển sang danh sách đích`
-        });
-    }
-
-    // No cards, just delete the list
-    await prisma.list.delete({ where: { id: listId } });
-
-    // Log activity (Từ Code 2)
-    logActivity(req, {
-        action: 'list_delete',
-        entityType: 'list',
-        entityId: listId,
-        metadata: {
-            listName: list.name,
-            boardId: list.boardId,
-            boardName: list.board.name,
-            workspaceId: list.board.workspaceId
-        }
-    });
-
-    res.json({ success: true, message: 'Danh sách đã được xóa thành công' });
-}
+                return res.json({
+                    success: true,
+                    message: `Danh sách đã được xóa và ${list._count.cards} thẻ đã được chuyển sang danh sách đích`
+                });
+            }
+        
+            // No cards, just delete the list
+            await prisma.list.delete({ where: { id: listId } });
+        
+            // Log activity (Từ Code 2)
+            logActivity(req, {
+                action: 'list_delete',
+                entityType: 'list',
+                entityId: listId,
+                metadata: {
+                    listName: list.name,
+                    boardId: list.boardId,
+                    boardName: list.board.name,
+                    workspaceId: list.board.workspaceId
+                }
+            });
+        
+            res.json({ success: true, message: 'Danh sách đã được xóa thành công' });}
 
 
 async function reorderLists(req, res) {
@@ -299,7 +298,7 @@ async function reorderLists(req, res) {
     if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
     }
-    const { boardId, orders } = parsed.data;
+    const { boardId, orders, socketId } = parsed.data;
 
     const { board, workspaceMember } = await checkWorkspaceAccess(boardId, req.user.id);
     if (!board) {
@@ -318,50 +317,45 @@ async function reorderLists(req, res) {
         return res.status(400).json({ error: 'Một số danh sách không thuộc bảng này' });
     }
 
-    const orderIndexes = orders.map(o => o.orderIdx);
-    const uniqueIndexes = new Set(orderIndexes);
-    if (orderIndexes.length !== uniqueIndexes.size) {
-        return res.status(400).json({ error: 'Không cho phép trùng chỉ số thứ tự' });
+    try {
+        const sortedOrders = [...orders].sort((a, b) => a.orderIdx - b.orderIdx);
+        const normalizedOrders = sortedOrders.map((order, index) => ({
+            id: order.id,
+            orderIdx: index
+        }));
+
+        await prisma.$transaction(async (tx) => {
+            for (const order of normalizedOrders) {
+                await tx.list.update({
+                    where: { id: order.id },
+                    data: { orderIdx: order.orderIdx }
+                });
+            }
+        });
+        
+        res.json({ success: true, orders: normalizedOrders });
+
+        try {
+            const payload = {
+                boardId,
+                orders: normalizedOrders,
+                movedBy: req.user.id
+            };
+            const room = `board:${boardId}`;
+
+            if (socketId && req.boardNamespace.sockets.has(socketId)) {
+                req.boardNamespace.to(room).except(socketId).emit('lists_reordered', payload);
+            } else {
+                req.boardNamespace.to(room).emit('lists_reordered', payload);
+            }
+        } catch (socketError) {
+            console.error("Socket emit error in reorderLists:", socketError);
+        }
+
+    } catch (error) {
+        console.error("Error reordering lists:", error);
+        res.status(500).json({ error: "Failed to reorder lists" });
     }
-
-    const sortedOrders = [...orders].sort((a, b) => a.orderIdx - b.orderIdx);
-    const normalizedOrders = sortedOrders.map((order, index) => ({
-        id: order.id,
-        orderIdx: index
-    }));
-
-    // Use two-phase update to avoid unique constraint conflicts
-    await prisma.$transaction(async (tx) => {
-        // Phase 1: Set all to temporary negative values
-        for (let i = 0; i < normalizedOrders.length; i++) {
-            await tx.list.update({
-                where: { id: normalizedOrders[i].id },
-                data: { orderIdx: -1000 - i }
-            });
-        }
-
-        // Phase 2: Set to final values
-        for (let i = 0; i < normalizedOrders.length; i++) {
-            await tx.list.update({
-                where: { id: normalizedOrders[i].id },
-                data: { orderIdx: normalizedOrders[i].orderIdx }
-            });
-        }
-    });
-
-    // Log activity (Từ Code 2)
-    logActivity(req, {
-        action: 'list_reorder',
-        entityType: 'board',
-        entityId: boardId,
-        metadata: {
-            boardName: board.name,
-            workspaceId: board.workspaceId,
-            listCount: normalizedOrders.length
-        }
-    });
-
-    res.json({ success: true, orders: normalizedOrders });
 }
 
 

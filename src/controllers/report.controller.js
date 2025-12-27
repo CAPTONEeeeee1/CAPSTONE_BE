@@ -17,8 +17,8 @@ async function getWorkspaceReport(req, res) {
         where: { workspaceId, userId: req.user.id }
     });
 
-    if (!member || !['OWNER', 'LEADER'].includes(member.role)) {
-        return res.status(403).json({ error: 'Only workspace owner/admin can view reports' });
+    if (!member) {
+        return res.status(403).json({ error: 'You do not have permission to view reports for this workspace.' });
     }
 
     const dateFilter = {};
@@ -186,8 +186,8 @@ async function getWorkspaceActivityTimeline(req, res) {
         where: { workspaceId, userId: req.user.id }
     });
 
-    if (!member || !['OWNER', 'LEADER'].includes(member.role)) {
-        return res.status(403).json({ error: 'Only workspace owner/admin can view timeline' });
+    if (!member) {
+        return res.status(403).json({ error: 'You do not have permission to view the timeline for this workspace.' });
     }
 
     const startDate = new Date();
@@ -222,6 +222,10 @@ async function getWorkspaceActivityTimeline(req, res) {
 }
 
 async function getGlobalReport(req, res) {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
   const [
     totalUsers,
     activeUsers,
@@ -230,6 +234,7 @@ async function getGlobalReport(req, res) {
     totalBoards,
     totalCards,
     recentActivities,
+    totalActivityCount,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { status: 'active' } }),
@@ -238,13 +243,58 @@ async function getGlobalReport(req, res) {
     prisma.board.count(),
     prisma.card.count(),
     prisma.activityLog.findMany({
-      take: 10,
+      skip,
+      take: limit,
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, email: true, fullName: true } },
+        user: { select: { id: true, email: true, fullName: true, avatar: true } },
       },
     }),
+    prisma.activityLog.count(),
   ]);
+
+  const boardEntityIds = recentActivities.filter(a => a.entityType === 'board').map(a => a.entityId);
+  const cardEntityIds = recentActivities.filter(a => a.entityType === 'card').map(a => a.entityId);
+  const workspaceEntityIds = recentActivities.filter(a => a.entityType === 'workspace').map(a => a.entityId);
+
+  const contextMap = {};
+
+  if (workspaceEntityIds.length > 0) {
+    const workspaces = await prisma.workspace.findMany({
+        where: { id: { in: workspaceEntityIds } },
+        select: { id: true, name: true }
+    });
+    workspaces.forEach(ws => {
+        contextMap[ws.id] = { id: ws.id, name: ws.name };
+    });
+  }
+
+  if (boardEntityIds.length > 0) {
+      const boards = await prisma.board.findMany({
+          where: { id: { in: boardEntityIds } },
+          include: { workspace: { select: { id: true, name: true } } }
+      });
+      boards.forEach(board => {
+          contextMap[board.id] = { id: board.workspace.id, name: board.workspace.name };
+      });
+  }
+
+  if (cardEntityIds.length > 0) {
+    const cards = await prisma.card.findMany({
+        where: { id: { in: cardEntityIds } },
+        include: { board: { include: { workspace: { select: { id: true, name: true } } } } }
+    });
+    cards.forEach(card => {
+        if (card.board && card.board.workspace) {
+            contextMap[card.id] = { id: card.board.workspace.id, name: card.board.workspace.name };
+        }
+    });
+  }
+
+  const enrichedActivities = recentActivities.map(activity => ({
+      ...activity,
+      workspace: contextMap[activity.entityId] || null,
+  }));
 
   res.json({
     stats: {
@@ -253,7 +303,14 @@ async function getGlobalReport(req, res) {
       boards: totalBoards,
       cards: totalCards,
     },
-    recentActivities,
+    recentActivities: enrichedActivities,
+    pagination: {
+      total: totalActivityCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalActivityCount / limit),
+      hasMore: (page * limit) < totalActivityCount,
+    }
   });
 }
 
@@ -302,7 +359,8 @@ async function getUserDashboardReport(req, res) {
         board: { workspace: workspaceFilter },
       },
     }),
-    prisma.workspaceMember.count({
+    prisma.workspaceMember.groupBy({
+      by: ['userId'],
       where: {
         workspace: {
           members: {
@@ -312,7 +370,7 @@ async function getUserDashboardReport(req, res) {
           },
         },
       },
-    }),
+    }).then(groups => groups.length),
     prisma.activityLog.findMany({
       where: {
         userId,
@@ -403,7 +461,10 @@ async function getReportsOverview(req, res) {
           board: { workspaceId: { in: workspaceIds } },
         },
       }),
-      prisma.workspaceMember.count({ where: { workspaceId: { in: workspaceIds } } }),
+      prisma.workspaceMember.groupBy({
+        by: ['userId'],
+        where: { workspaceId: { in: workspaceIds } },
+      }).then(groups => groups.length),
       prisma.activityLog.findMany({
         where: activityWhere,
         orderBy: { createdAt: 'desc' },

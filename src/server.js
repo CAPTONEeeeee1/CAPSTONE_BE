@@ -6,7 +6,9 @@ const cors = require("cors");
 const passport = require("./config/passport.config");
 const routes = require("./routes");
 const { scheduleDigestWorker } = require("./workers/digest.worker");
+const { scheduleActivityLogCleanup } = require("./workers/cleanup.worker");
 const { initializeChatSocket } = require("./sockets/chat.socket");
+const { initializeBoardSocket } = require("./sockets/board.socket");
 
 const app = express();
 const server = http.createServer(app);
@@ -44,6 +46,10 @@ app.set('io', io);
 const chatNamespace = initializeChatSocket(io);
 app.set('chatNamespace', chatNamespace);
 
+// Khởi tạo board socket và lưu namespace
+const boardNamespace = initializeBoardSocket(io);
+app.set('boardNamespace', boardNamespace);
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
@@ -59,8 +65,10 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Socket.IO running on ws://localhost:${PORT}/chat`);
+  console.log(`Socket.IO running on ws://localhost:${PORT}/board`);
   console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
 
-  // Start the scheduled worker for email digests
+  // Start the scheduled workers
   scheduleDigestWorker();
+  scheduleActivityLogCleanup();
 });

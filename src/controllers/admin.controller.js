@@ -394,6 +394,26 @@ async function deleteUser(req, res) {
 
 async function getStats(req, res) {
   try {
+    const { page = 1, limit = 10, search, startDate, endDate } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const activityWhere = {};
+    if (search) {
+      activityWhere.user = {
+        OR: [
+          { email: { contains: search, mode: 'insensitive' } },
+          { fullName: { contains: search, mode: 'insensitive' } },
+        ],
+      };
+    }
+    if (startDate && endDate) {
+      activityWhere.createdAt = {
+        gte: new Date(startDate),
+        // Add 1 day to endDate to include the whole day
+        lte: new Date(new Date(endDate).setDate(new Date(endDate).getDate() + 1)),
+      };
+    }
+
     const [
       totalUsers,
       activeUsers,
@@ -402,6 +422,7 @@ async function getStats(req, res) {
       boards,
       cards,
       recentActivities,
+      totalActivityCount,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { status: 'active' } }),
@@ -410,32 +431,75 @@ async function getStats(req, res) {
       prisma.board.count(),
       prisma.card.count(),
       prisma.activityLog.findMany({
+        where: activityWhere,
+        skip,
+        take: parseInt(limit),
         orderBy: { createdAt: 'desc' },
-        take: 5,
         include: {
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
+          user: { select: { id: true, email: true, fullName: true, avatar: true } },
         },
       }),
+      prisma.activityLog.count({ where: activityWhere }),
     ]);
+
+    const boardEntityIds = recentActivities.filter(a => a.entityType === 'board').map(a => a.entityId);
+    const cardEntityIds = recentActivities.filter(a => a.entityType === 'card').map(a => a.entityId);
+    const workspaceEntityIds = recentActivities.filter(a => a.entityType === 'workspace').map(a => a.entityId);
+
+    const contextMap = {};
+
+    if (workspaceEntityIds.length > 0) {
+      const workspaceData = await prisma.workspace.findMany({
+          where: { id: { in: workspaceEntityIds } },
+          select: { id: true, name: true }
+      });
+      workspaceData.forEach(ws => {
+          contextMap[ws.id] = { id: ws.id, name: ws.name };
+      });
+    }
+
+    if (boardEntityIds.length > 0) {
+        const boardData = await prisma.board.findMany({
+            where: { id: { in: boardEntityIds } },
+            include: { workspace: { select: { id: true, name: true } } }
+        });
+        boardData.forEach(board => {
+            contextMap[board.id] = { id: board.workspace.id, name: board.workspace.name };
+        });
+    }
+
+    if (cardEntityIds.length > 0) {
+      const cardData = await prisma.card.findMany({
+          where: { id: { in: cardEntityIds } },
+          include: { board: { include: { workspace: { select: { id: true, name: true } } } } }
+      });
+      cardData.forEach(card => {
+          if (card.board && card.board.workspace) {
+              contextMap[card.id] = { id: card.board.workspace.id, name: card.board.workspace.name };
+          }
+      });
+    }
+
+    const enrichedActivities = recentActivities.map(activity => ({
+        ...activity,
+        workspace: contextMap[activity.entityId] || null,
+    }));
 
     res.json({
       stats: {
-        users: {
-          total: totalUsers,
-          active: activeUsers,
-          suspended: suspendedUsers,
-        },
+        users: { total: totalUsers, active: activeUsers, suspended: suspendedUsers },
         workspaces,
         boards,
         cards,
       },
-      recentActivities,
+      recentActivities: enrichedActivities,
+      pagination: {
+        total: totalActivityCount,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(totalActivityCount / parseInt(limit)),
+        hasMore: (parseInt(page) * parseInt(limit)) < totalActivityCount,
+      }
     });
   } catch (err) {
     console.error('Get admin stats error:', err);

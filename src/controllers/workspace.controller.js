@@ -270,27 +270,12 @@ async function inviteMember(req, res) {
         return res.status(403).json({ error: 'You are not a member of this workspace.' });
     }
 
-    // --- New, Stricter Permission Checks ---
-    if (currentMember.role === 'OWNER') {
-        const leaderCount = await prisma.workspaceMember.count({
-            where: { workspaceId, role: 'LEADER' }
-        });
-
-        if (leaderCount > 0) {
-            if (roleUpper !== 'MEMBER') {
-                return res.status(400).json({ error: 'A leader already exists. You can only invite new users as "MEMBER".' });
-            }
-        } else { // No leader exists yet
-            if (roleUpper !== 'LEADER' && roleUpper !== 'MEMBER') {
-                return res.status(400).json({ error: 'You may invite one person as "LEADER", otherwise the role must be "MEMBER".' });
-            }
-        }
-
-    } else if (currentMember.role === 'LEADER') {
-        if (roleUpper !== 'MEMBER') {
-            return res.status(403).json({ error: 'As a Leader, you can only invite users with the "MEMBER" role.' });
-        }
-    } else {
+    // --- Simplified Permission Checks ---
+    if (currentMember.role === 'LEADER' && roleUpper !== 'MEMBER') {
+        return res.status(403).json({ error: 'As a Leader, you can only invite users with the "MEMBER" role.' });
+    }
+    
+    if (currentMember.role !== 'OWNER' && currentMember.role !== 'LEADER') {
         return res.status(403).json({ error: 'Only owner or leader can invite members' });
     }
 
@@ -374,12 +359,42 @@ async function acceptInvitation(req, res) {
     });
     if (existingMember) return res.status(400).json({ error: 'You are already a member of this workspace' });
 
+    // Check workspace plan and limit members if it's a FREE plan
+    if (invitation.workspace.plan === 'FREE') {
+        const memberCount = await prisma.workspaceMember.count({
+            where: { workspaceId: invitation.workspaceId },
+        });
+
+        if (memberCount >= 5) {
+            return res.status(403).json({
+                error: 'Workspace has reached its member limit for the FREE plan.',
+            });
+        }
+    }
+
+    let finalRole = invitation.role;
+    let roleDowngraded = false;
+
+    if (finalRole === 'LEADER') {
+        const leaderCount = await prisma.workspaceMember.count({
+            where: {
+                workspaceId: invitation.workspaceId,
+                role: 'LEADER',
+            },
+        });
+
+        if (leaderCount > 0) {
+            finalRole = 'MEMBER';
+            roleDowngraded = true;
+        }
+    }
+
     await prisma.$transaction(async (tx) => {
         await tx.workspaceMember.create({
             data: {
                 workspaceId: invitation.workspaceId,
                 userId: req.user.id,
-                role: invitation.role,
+                role: finalRole, // Use the potentially downgraded role
                 invitedById: invitation.invitedById,
                 invitedAt: invitation.invitedAt,
                 joinedAt: new Date()
@@ -411,7 +426,8 @@ async function acceptInvitation(req, res) {
     res.json({
         message: 'Invitation accepted successfully',
         workspaceId: invitation.workspaceId,
-        workspace: invitation.workspace
+        workspace: invitation.workspace,
+        roleDowngraded, // Send downgrade status to frontend
     });
 }
 
