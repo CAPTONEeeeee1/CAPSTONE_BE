@@ -153,7 +153,10 @@ async function getPayments(req, res) {
     }),
     prisma.payment.count({ where }),
     prisma.payment.aggregate({
-      where,
+      where: {
+        ...where,
+        status: 'SUCCESS', // Only sum successful payments
+      },
       _sum: {
         amount: true,
       },
